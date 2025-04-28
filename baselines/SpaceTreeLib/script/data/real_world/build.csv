@@ -1,0 +1,13 @@
+solver,file,nodes,dims,build,maxDepth,aveDepth
+Cosmo50,321M,3,kd,1.93822,27,23.9338
+Cosmo50,321M,3,orth,1.98509,35,9.61651
+Cosmo50,321M,3,r,1.93619,27,23.9338
+GeoLifeNoScale,24M,3,kd,0.316439,47,24.3082
+GeoLifeNoScale,24M,3,orth,0.304334,29,18.0947
+GeoLifeNoScale,24M,3,r,0.362008,47,24.3082
+Household,2.04M,7,kd,0.0680733,50,25.5784
+Household,2.04M,7,orth,0.039766,13,7.6189
+Household,2.04M,7,r,0.0677217,50,25.5784
+osm,1298M,2,kd,6.61768,40,26.0096
+osm,1298M,2,orth,7.60803,21,17.3257
+osm,1298M,2,r,6.44848,40,26.0096

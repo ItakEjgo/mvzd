@@ -1,0 +1,20 @@
+[
+{
+  "directory": "/data/bhuan102/cpam-quadtree/CPAM/baselines/SpaceTreeLib/build",
+  "command": "/usr/bin/clang++ -DPARLAY_ELASTIC_PARALLELISM=true -I/usr/local/lib -I/data/bhuan102/cpam-quadtree/CPAM/baselines/SpaceTreeLib/include -I/data/bhuan102/cpam-quadtree/CPAM/baselines/SpaceTreeLib/include/pstp -I/data/bhuan102/cpam-quadtree/CPAM/baselines/SpaceTreeLib/include/parlaylib/include -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Werror -pthread -O3 -mcx16 -march=native -o CMakeFiles/test.dir/tests/test.cpp.o -c /data/bhuan102/cpam-quadtree/CPAM/baselines/SpaceTreeLib/tests/test.cpp",
+  "file": "/data/bhuan102/cpam-quadtree/CPAM/baselines/SpaceTreeLib/tests/test.cpp",
+  "output": "CMakeFiles/test.dir/tests/test.cpp.o"
+},
+{
+  "directory": "/data/bhuan102/cpam-quadtree/CPAM/baselines/SpaceTreeLib/build",
+  "command": "/usr/bin/clang++ -DPARLAY_ELASTIC_PARALLELISM=true -I/usr/local/lib -I/data/bhuan102/cpam-quadtree/CPAM/baselines/SpaceTreeLib/include -I/data/bhuan102/cpam-quadtree/CPAM/baselines/SpaceTreeLib/include/pstp -I/data/bhuan102/cpam-quadtree/CPAM/baselines/SpaceTreeLib/include/parlaylib/include -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Werror -pthread -O3 -mcx16 -march=native -o CMakeFiles/data_generator.dir/tests/data_generate.cpp.o -c /data/bhuan102/cpam-quadtree/CPAM/baselines/SpaceTreeLib/tests/data_generate.cpp",
+  "file": "/data/bhuan102/cpam-quadtree/CPAM/baselines/SpaceTreeLib/tests/data_generate.cpp",
+  "output": "CMakeFiles/data_generator.dir/tests/data_generate.cpp.o"
+},
+{
+  "directory": "/data/bhuan102/cpam-quadtree/CPAM/baselines/SpaceTreeLib/build",
+  "command": "/usr/bin/clang++ -DPARLAY_ELASTIC_PARALLELISM=true -I/usr/local/lib -I/data/bhuan102/cpam-quadtree/CPAM/baselines/SpaceTreeLib/include -I/usr/include/boost1.78 -I/data/bhuan102/cpam-quadtree/CPAM/baselines/SpaceTreeLib/include/pstp -I/data/bhuan102/cpam-quadtree/CPAM/baselines/SpaceTreeLib/include/parlaylib/include -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Werror -pthread -O3 -mcx16 -march=native -o CMakeFiles/rtree.dir/tests/rtree.cpp.o -c /data/bhuan102/cpam-quadtree/CPAM/baselines/SpaceTreeLib/tests/rtree.cpp",
+  "file": "/data/bhuan102/cpam-quadtree/CPAM/baselines/SpaceTreeLib/tests/rtree.cpp",
+  "output": "CMakeFiles/rtree.dir/tests/rtree.cpp.o"
+}
+]

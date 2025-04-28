@@ -1,0 +1,21 @@
+# Output log
+*.time
+*.res
+*.txt
+*.log
+*.idx
+
+# Intermediate files
+*.qry
+
+# Input data
+*.pts
+*.in
+
+# Output folders
+exp_res/
+exp_scripts/
+debug/
+output/
+log/
+test_code/

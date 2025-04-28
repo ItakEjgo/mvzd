@@ -1,0 +1,5 @@
+build time: 91.015
+num inserted: 1000000
+insert time: 7.328
+num deleted: 1000000
+delete time: 7.978

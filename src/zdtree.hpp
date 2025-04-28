@@ -1,0 +1,1626 @@
+#pragma once 
+
+#include <bits/stdc++.h>
+
+#include <cpam/cpam.h>
+#include <parlay/primitives.h>
+#include "geobase.h"
+#include <parlay/internal/get_time.h>
+#include "pam/utils.h"
+
+// #define USE_MBR
+// #define SEQ
+#define USE_PT
+
+extern geobase::break_down zd_build_break_down;
+extern size_t maxSize;
+extern double zd_leaf_copy_time;
+extern double zd_inte_copy_time;
+
+namespace ZDTree{
+
+	using namespace std;
+	using namespace geobase;
+	using parlay::sequence;
+	using parlay::par_do;
+	using parlay::par_do_if;
+
+	struct tree_stat{
+		size_t num_inte_nodes;
+		size_t num_leaf_nodes;
+		size_t mem_inte_nodes;
+		size_t mem_leaf_nodes;
+		tree_stat():num_inte_nodes(0), num_leaf_nodes(0), mem_inte_nodes(0), mem_leaf_nodes(0){}
+	};
+
+	struct BaseNode{
+		#ifdef USE_MBR
+		Bounding_Box mbr;
+		BaseNode(): mbr({Point(-1, -1), Point(-1, -1)}){}
+		#endif
+		BaseNode(){}
+
+		virtual~BaseNode() = default;
+		virtual bool is_leaf(){ return false; }
+		virtual size_t get_num_points(){ return 0; }
+	};
+
+	struct InteNode: BaseNode{
+		shared_ptr<BaseNode> l_son, r_son;
+		size_t num_pts;
+
+		InteNode(): l_son(nullptr), r_son(nullptr), num_pts(0){}
+		// InteNode(InteNode &x): l_son(x->l_son), r_son(x->r_son), num_pts(x->num_pts){}
+		
+		virtual bool is_leaf(){ return false; }
+		virtual size_t get_num_points(){ return num_pts; }
+	};
+
+	struct LeafNode: BaseNode{
+		// sequence<Point> records;
+		sequence<Point> records = sequence<Point>::uninitialized(32);
+
+		template<typename Records>
+		LeafNode(Records &r){
+			if (r.size() > 32){
+				records = sequence<Point>::uninitialized(r.size());
+			}
+			size_t i = 0;	
+			for (auto &pt: r){
+				parlay::assign_uninitialized(records[i++], pt);
+				// records[i] = r[i];
+			}
+			records.resize(r.size());
+		}
+
+		template<typename Records, typename Func>
+		LeafNode(Records &r, Func &f){
+			if (r.size() > 32){
+				records = sequence<Point>::uninitialized(r.size());
+			}
+			size_t i = 0;	
+			for (auto &pt: r){
+				if (f){
+					parlay::assign_uninitialized(records[i++], pt);
+				}
+				// records[i] = r[i];
+			}
+			records.resize(i);
+		}
+
+		// LeafNode(LeafNode &x): records(x->records){}
+
+		virtual bool is_leaf(){ return true; }
+		virtual size_t get_num_points(){ return records.size(); }
+
+		void print_records(){
+			cout << records.size() << endl;
+			for (size_t i = 0; i < records.size(); i++){
+				cout << "(" << records[i].x << ", " << records[i].y << ")" << endl; 
+			}
+		}
+	};
+
+	class Tree{
+	public:
+		size_t visited_leaf = 0;
+		size_t visited_inte = 0;
+		size_t granularity_cutoff = 1000;
+		size_t inte_node_cnt = 0;
+		size_t leaf_node_cnt = 0;
+		size_t leaf_size = 1;
+		size_t node_cnt = 0;
+		size_t leaf_cnt = 0;
+		size_t record_cnt = 0;
+		size_t case0 = 0;
+		size_t case1 = 0;
+		size_t case2 = 0;
+		size_t case3 = 0;
+		size_t case4 = 0;
+		FT case0_time = 0;
+		FT case1_time = 0;
+		FT case2_time = 0;
+		FT case3_time = 0;
+		FT case4_time = 0;
+		shared_ptr<BaseNode> root;
+		vector<shared_ptr<BaseNode> > multi_version_roots = {};
+
+		Tree(size_t _leaf_sz);
+
+		shared_ptr<BaseNode> node_copy(shared_ptr<BaseNode> &x);
+
+		template<typename Func>
+		shared_ptr<BaseNode> node_copy(shared_ptr<BaseNode> &x, Func &f);
+
+		// entrance of building zdtree & tree construction
+		shared_ptr<BaseNode> build(sequence<Point> &P, size_t l, size_t r, size_t b);
+		void build(sequence<Point> &P);
+
+		void gc_nocheck(shared_ptr<BaseNode> &x);
+		void garbage_collect(shared_ptr<BaseNode> &base, shared_ptr<BaseNode> &x);
+
+		void clear();
+
+		int tree_hash(shared_ptr<BaseNode> &x);
+        int tree_hash_non_associative(shared_ptr<BaseNode> &x);
+
+		size_t num_of_nodes();	// total number of nodes in mvzd index
+		auto leaf_size_status();
+		auto leaf_size_status(shared_ptr<BaseNode> &rt);
+
+		auto get_tree_statistics();
+		template<typename NodeMap>
+		void get_tree_statistics(shared_ptr<BaseNode> &x, tree_stat &stat, NodeMap &mmp);
+
+
+		auto print_leaf(shared_ptr<BaseNode> &x);
+
+		void merge_nodes(shared_ptr<BaseNode> &lhs, shared_ptr<BaseNode> &rhs, shared_ptr<InteNode> &cur); 	// merge two sons to current node.
+		void delete_merge_nodes(shared_ptr<BaseNode> &L, shared_ptr<BaseNode> &R, InteNode* cur_node);
+
+		shared_ptr<InteNode> create_internal(shared_ptr<BaseNode> &L, shared_ptr<BaseNode> &R);	//	create an internal node, do not store pointers to original records.
+		shared_ptr<LeafNode> create_leaf(sequence<Point> &P, size_t l, size_t r, size_t b); // create a leaf, store all (pointers of) records.
+
+		// 	in-place insertion
+		void batch_insert_sorted(sequence<Point> &P);
+		void batch_insert_sorted_node(shared_ptr<BaseNode> &x, sequence<Point> &P, size_t l, size_t r, size_t b);
+		// 	multi-version (persistent) insertion
+		shared_ptr<BaseNode> multi_version_batch_insert_sorted(sequence<Point> &P, shared_ptr<BaseNode> &old_root);
+		void multi_version_batch_insert_sorted_node(shared_ptr<BaseNode> &x, sequence<Point> &P, size_t l, size_t r, size_t b);
+
+		//	in-place deletion
+		void batch_delete_sorted(sequence<Point> &P);
+		void batch_delete_sorted_node(shared_ptr<BaseNode> &x, sequence<Point> &P, size_t l, size_t r, size_t b);
+		//	multi-version (persistent) deletion
+		shared_ptr<BaseNode> multi_version_batch_delete_sorted(sequence<Point> &P, shared_ptr<BaseNode> &old_root);
+		void multi_version_batch_delete_sorted_node(shared_ptr<BaseNode> &x, sequence<Point> &P, size_t l, size_t r, size_t b);
+
+		// auto filter_diff_results(sequence<Point> &add, sequence<Point> &remove);
+
+
+		// collect all records in version x	
+		auto collect_records(shared_ptr<BaseNode> &x);
+		auto collect_records(shared_ptr<BaseNode> &x, Bounding_Box &query_mbr, 
+							Bounding_Box &cur_mbr, FT x_prefix, FT y_prefix, size_t b, bool x_splitter);
+
+		// auto diff(shared_ptr<BaseNode> &tree1, shared_ptr<BaseNode> &tree2);
+		
+		auto spatial_diff(shared_ptr<BaseNode> &node1, shared_ptr<BaseNode> &node2, Bounding_Box &query_mbr, Bounding_Box &cur_mbr, FT x_prefix, FT y_prefix, size_t b, bool x_splitter);
+		auto spatial_two_version_diff(shared_ptr<BaseNode> &node1, shared_ptr<BaseNode> &node2, Bounding_Box &query_mbr, Bounding_Box &cur_mbr);
+
+		auto diff(shared_ptr<BaseNode> &node1, shared_ptr<BaseNode> &node2, size_t b);
+		auto leaf_leaf_diff(shared_ptr<BaseNode> &leaf1, shared_ptr<BaseNode> &leaf2);
+		auto leaf_leaf_diff(shared_ptr<BaseNode> &leaf1, shared_ptr<BaseNode> &leaf2, Bounding_Box &query_mbr);
+		auto leaf_inte_diff(sequence<Point> &P, size_t l, size_t r, shared_ptr<BaseNode> &inte, size_t b);
+		auto leaf_inte_diff(sequence<Point> &P, size_t l, size_t r, shared_ptr<BaseNode> &x,
+								Bounding_Box &query_mbr, Bounding_Box &cur_mbr, FT x_prefix, FT y_prefix, size_t b, bool x_splitter);
+		auto two_version_diff(shared_ptr<BaseNode> &node1, shared_ptr<BaseNode> &node2);
+
+		//	commit, based on op do multi-version insertion, deletion, and update
+		auto commit(shared_ptr<BaseNode> &old_version, sequence<Point> &P_insert, sequence<Point> &P_delete);
+		// merge, works like git merge, return a conflict set
+		auto merge(shared_ptr<BaseNode> &base, shared_ptr<BaseNode> &node1, shared_ptr<BaseNode> &node2);
+		
+		// intervals are left close right open: i.e., [L, R)
+		// range report
+		template <class Out> 
+		void range_report_node(shared_ptr<BaseNode> &x, Bounding_Box &query_mbr, Bounding_Box &cur_mbr, FT x_prefix, FT y_prefix, size_t b, bool x_splitter, size_t &cnt, Out &out);
+		template <class Out>
+		void range_report(Bounding_Box &query_mbr, Bounding_Box &cur_mbr, size_t &cnt, Out &out);
+		template <class Out>
+		void range_report(shared_ptr<BaseNode> &x, Bounding_Box &query_mbr, Bounding_Box &cur_mbr, size_t &cnt, Out &out);
+
+		// range count
+		size_t range_count_node(shared_ptr<BaseNode> &x, Bounding_Box &query_mbr, Bounding_Box &cur_mbr, FT x_prefix, FT y_prefix, size_t b, bool x_splitter);
+		size_t range_count(Bounding_Box &query_mbr, Bounding_Box &cur_mbr);
+		size_t range_count(shared_ptr<BaseNode> &x, Bounding_Box &query_mbr, Bounding_Box &cur_mbr);
+
+		// k nearest neighbor report
+		template<class T> 
+		void knn_report_node(shared_ptr<BaseNode> &x, size_t &k, Point query_point, Bounding_Box &cur_mbr, FT x_prefix, FT y_prefix, size_t b, bool x_splitter, T &nn_res);
+		auto knn_report(size_t &k, Point query_point, Bounding_Box &cur_mbr);
+    };
+
+
+    // //	filter inserted points, deleted points, and updated points from add and remove sets. The updated points contain the new coordinates
+	// auto Tree::filter_diff_results(sequence<Point> &add, sequence<Point> &remove){
+	// 	auto id_cmp = [&](auto lhs, auto rhs){ return lhs.id < rhs.id; };
+	// 	auto sorted_add = parlay::sort(add, id_cmp);
+	// 	auto sorted_remove = parlay::sort(remove, id_cmp);
+
+	// 	sequence<Point> insert_points = {}, delete_points = {}, update_points = {};
+	// 	size_t i = 0, j = 0;
+	// 	while (i < sorted_add.size() && j < sorted_remove.size()){
+	// 		if (sorted_add[i].id < sorted_remove[j].id){	//	we should insert sorted_add[i]
+	// 			insert_points.emplace_back(sorted_add[i++]);
+	// 		}
+	// 		else if (sorted_add[i].id == sorted_remove[j].id){	//	exist in both add and remove, indicate it is an update point
+	// 			update_points.emplace_back(sorted_add[i++]);
+	// 			j++;
+	// 		}
+	// 		else{	//	we should remove sorted_remove[j]
+	// 			delete_points.emplace_back(sorted_remove[j++]);
+	// 		}
+	// 	}
+	// 	while (i < sorted_add.size()) insert_points.emplace_back(sorted_add[i++]);
+	// 	while (j < sorted_remove.size()) delete_points.emplace_back(sorted_remove[j++]);
+	// 	return make_tuple(insert_points, delete_points, update_points);
+	// }
+	
+	auto Tree::collect_records(shared_ptr<BaseNode> &x){
+		sequence<Point> ret = {};
+		if (!x){
+			return ret;
+		}
+		if (x->is_leaf()){
+			auto cur_leaf = static_cast<LeafNode*>(x.get());
+			ret = cur_leaf->records;
+			return ret;
+		}
+		auto cur_inte = static_cast<InteNode*>(x.get());
+		sequence<Point> R;
+		auto collect_left = [&](){ret = collect_records(cur_inte->l_son); }; 
+		auto collect_right = [&](){R = collect_records(cur_inte->r_son); };
+		par_do_if(x->get_num_points() >= granularity_cutoff,
+			collect_left,
+			collect_right
+		);
+		ret.append(R);
+		return ret;
+	}
+
+	auto Tree::collect_records(shared_ptr<BaseNode> &x, Bounding_Box &query_mbr, 
+								Bounding_Box &cur_mbr, FT x_prefix, FT y_prefix, size_t b, bool x_splitter){
+		sequence<Point> ret = {};
+		if (!x){
+			return ret;
+		}
+		auto flag = mbr_mbr_relation(cur_mbr, query_mbr);
+		if (flag < 0) return ret;
+
+		if (x->is_leaf()){
+			auto cur_leaf = static_cast<LeafNode*>(x.get());
+			if (flag > 0) return cur_leaf->records;
+			else{
+				auto f = [&](auto x){	//	filter a sequence of points in the query mbr
+					return point_in_mbr(x, query_mbr);
+				};
+				return parlay::filter(cur_leaf->records, f);
+			}
+		}
+
+		auto cur_inte = static_cast<InteNode*>(x.get());
+
+		size_t shift_b = (b + 1) / 2;
+		FT split_value = 1.0 * (1u << (shift_b - 1));
+
+		auto L_box = cur_mbr;
+		auto R_box = cur_mbr;
+		auto rx_prefix = x_prefix;
+		auto ry_prefix = y_prefix;
+		if (x_splitter){
+			L_box.second.x = min(x_prefix + split_value - FT_EPS, L_box.second.x);
+			R_box.first.x = max(x_prefix + split_value, R_box.first.x);
+			rx_prefix += split_value;
+		}
+		else{
+			L_box.second.y = min(y_prefix + split_value - FT_EPS, L_box.second.y);
+			R_box.first.y = max(y_prefix + split_value, R_box.first.y);
+			ry_prefix += split_value;
+		}
+
+		sequence<Point> R;
+		auto collect_left = [&](){ret = collect_records(cur_inte->l_son, query_mbr, L_box, x_prefix, y_prefix, b - 1, !x_splitter); }; 
+		auto collect_right = [&](){R = collect_records(cur_inte->r_son, query_mbr, R_box, rx_prefix, ry_prefix, b - 1, !x_splitter); };
+		par_do_if(x->get_num_points() >= granularity_cutoff,
+			collect_left,
+			collect_right
+		);
+		ret.append(R);
+		return ret;
+	}
+
+	auto Tree::commit(shared_ptr<BaseNode> &old_version, sequence<Point> &P_insert, sequence<Point> &P_delete){
+		// parlay::internal::timer t("debug", false);
+		auto P_set = get_sorted_points(P_delete);
+		auto tmp_ver = multi_version_batch_delete_sorted(P_set, old_version);
+		// cout << "base version size: " << collect_records(old_version).size() << endl;
+		// t.next("delete time");
+		P_set = get_sorted_points(P_insert);
+		auto new_ver = multi_version_batch_insert_sorted(P_set, tmp_ver);
+		// cout << "base version size: " << collect_records(old_version).size() << endl;
+		// t.next("insert time");
+		garbage_collect(old_version, tmp_ver);
+		// tmp_ver.reset();
+		// t.next("garbage-collect time");
+		// cout << "base version size: " << collect_records(old_version).size() << endl;
+		return new_ver;
+	}
+
+
+	auto Tree::leaf_leaf_diff(shared_ptr<BaseNode> &leaf1, shared_ptr<BaseNode> &leaf2, Bounding_Box &query_mbr){
+		// sequence<Point> add = {}, remove = {};
+		auto cur_leaf1 = static_cast<LeafNode*>(leaf1.get());
+		auto cur_leaf2 = static_cast<LeafNode*>(leaf2.get());
+
+		// auto not_in_leaf2 = [&](auto pt){
+		// 	if (!point_in_mbr(pt, query_mbr)) return false;	//	not in query MBR
+		// 	for (size_t i = 0; i < cur_leaf2->records.size(); i++){
+		// 		if (pt.id == cur_leaf2->records[i].id && pt == cur_leaf2->records[i]) return false;
+		// 	}
+		// 	return true;
+		// };
+		// remove = parlay::filter(cur_leaf1->records, not_in_leaf2);
+		auto f = [&](auto pt){
+			return point_in_mbr(pt, query_mbr);
+		};
+		// remove = get_delete_p(cur_leaf1->records, cur_leaf2->records, 0, cur_leaf2->get_num_points(), f);
+		// add = get_delete_p(cur_leaf2->records, cur_leaf1->records, 0, cur_leaf1->get_num_points(), f);
+		
+		// auto not_in_leaf1 = [&](auto pt){
+		// 	if (!point_in_mbr(pt, query_mbr)) return false; //	not in query MBR
+		// 	for (size_t i = 0; i < cur_leaf1->records.size(); i++){
+		// 		if (pt.id == cur_leaf1->records[i].id && pt == cur_leaf1->records[i]) return false;
+		// 	}
+		// 	return true;
+		// };
+		// add = parlay::filter(cur_leaf2->records, not_in_leaf1);
+
+		// return make_tuple(add, remove);	
+		return geobase::merge_pts(cur_leaf1->records, cur_leaf2->records, f);
+	}
+
+	auto Tree::leaf_leaf_diff(shared_ptr<BaseNode> &leaf1, shared_ptr<BaseNode> &leaf2){
+		// sequence<Point> add = {}, remove = {};
+
+		auto cur_leaf1 = static_cast<LeafNode*>(leaf1.get());
+		auto cur_leaf2 = static_cast<LeafNode*>(leaf2.get());
+
+		// auto not_in_leaf2 = [&](auto pt){
+		// 	for (size_t i = 0; i < cur_leaf2->records.size(); i++){
+		// 		if (pt.id == cur_leaf2->records[i].id && pt == cur_leaf2->records[i] ) return false;
+		// 	}
+		// 	return true;
+		// };
+		// auto remove_bk = parlay::filter(cur_leaf1->records, not_in_leaf2);
+		// remove = get_delete_p(cur_leaf1->records, cur_leaf2->records, 0, cur_leaf2->get_num_points());
+		// add = get_delete_p(cur_leaf2->records, cur_leaf1->records, 0, cur_leaf1->get_num_points());
+
+		// auto not_in_leaf1 = [&](auto pt){
+		// 	for (size_t i = 0; i < cur_leaf1->records.size(); i++){
+		// 		if (pt.id == cur_leaf1->records[i].id && pt == cur_leaf1->records[i]) return false;
+		// 	}
+		// 	return true;
+		// };
+		// auto add_bk = parlay::filter(cur_leaf2->records, not_in_leaf1);
+		// return make_tuple(add, remove);	
+		return merge_pts(cur_leaf1->records, cur_leaf2->records);
+	}
+
+	//	note, this returns {add, remove} w.r.t. leaf, pay attention to the order (especially when swapped) 
+	//	leaf must not be nullptr
+	auto Tree::leaf_inte_diff(sequence<Point> &P, size_t l, size_t r, shared_ptr<BaseNode> &x, size_t b){
+		if (!x){	//	inte could be nullptr if only one branch exists
+			sequence<Point> add = {}, remove = P.substr(l, r - l);
+			return make_tuple(add, remove);
+		}
+		if (x->is_leaf()){	//	Base case when we meet two leaf nodes
+			auto cur_leaf = static_cast<LeafNode*>(x.get());
+			auto lhs_records = parlay::make_slice(&P[l], &P[r]);
+
+			// auto tmp_records = parlay::sequence<Point>::uninitialized(32);
+			// if (r - l > 32) tmp_records.resize(r - l);
+			// size_t cur = 0;
+			// for (size_t i = l; i < r; i++){
+			// 	parlay::assign_uninitialized(tmp_records[cur++], P[i]);
+			// }
+			// tmp_records.resize(cur);
+			return merge_pts(lhs_records, cur_leaf->records);
+
+			// remove = get_delete_p(tmp_records, cur_leaf->records, 0, cur_leaf->get_num_points());
+			// add = get_delete_p(cur_leaf->records, P, l, r);
+
+			// parlay::sequence<Point> remove_bk = {};
+			// for (size_t i = l; i < r; i++){	// in P[l..r] but not in the leaf
+			// 	bool flag = true; 
+			// 	for (size_t j = 0; j < cur_leaf->records.size(); j++){
+			// 		if (P[i].id == cur_leaf->records[j].id && P[i] == cur_leaf->records[j]){
+			// 			flag = false;
+			// 			break;
+			// 		}
+			// 	}
+			// 	if (flag) remove_bk.emplace_back(P[i]);
+			// }
+			// if (remove_bk != remove){
+			// 	cout << "ERROR, not equal remove" << endl;
+			// 	cout << "leaf record size: " << cur_leaf->records.size() << endl;
+			// 	cout << "r - l size: " << r - l << endl;
+			// 	cout << "remove: " << endl;
+			// 	for (auto &pt: remove){
+			// 		cout << pt.morton_id << "," << pt.id << endl; 
+			// 	}
+			// 	cout << "remove_bk: " << endl;
+			// 	for (auto &pt: remove_bk){
+			// 		cout << pt.morton_id << "," << pt.id << endl; 
+			// 	}
+			// 	int tt; cin >> tt;
+			// }
+			// parlay::sequence<Point> add_bk = {};
+			// for (size_t j = 0; j < cur_leaf->records.size(); j++){	// in the leaf but not in P[l..r]
+			// 	bool flag = true; 
+			// 	for (size_t i = l; i < r; i++){	
+			// 		if (P[i].id == cur_leaf->records[j].id && P[i] == cur_leaf->records[j]){
+			// 			flag = false;
+			// 			break;
+			// 		}
+			// 	}
+			// 	if (flag) add_bk.emplace_back(cur_leaf->records[j]);
+			// }
+
+			// if (add_bk != add){
+			// 	cout << "ERROR, not equal add" << endl;
+			// 	cout << "add: " << endl;
+			// 	for (auto &pt: add){
+			// 		cout << pt.morton_id << "," << pt.id << endl; 
+			// 	}
+			// 	cout << "add_bk: " << endl;
+			// 	for (auto &pt: add_bk){
+			// 		cout << pt.morton_id << "," << pt.id << endl; 
+			// 	}
+			// 	int tt; cin >> tt;
+			// }
+			// return make_tuple(add, remove);
+		}
+		//	divide into two subcases
+		auto splitter = split_by_bit(P, l, r, b);
+		auto cur_inte = static_cast<InteNode*>(x.get());
+		sequence<Point> L_add, L_remove, R_add, R_remove;
+
+		auto diff_left = [&](){ tie(L_add, L_remove) = leaf_inte_diff(P, l, splitter, cur_inte->l_son, b - 1); };
+		auto diff_right = [&](){ tie(R_add, R_remove) = leaf_inte_diff(P, splitter, r, cur_inte->r_son, b - 1); };
+		par_do_if(r - l + x->get_num_points() >= granularity_cutoff,
+			diff_left,
+			diff_right);
+		L_add.append(R_add);
+		L_remove.append(R_remove);
+		return make_tuple(L_add, L_remove);
+	}
+
+	auto Tree::leaf_inte_diff(sequence<Point> &P, size_t l, size_t r, shared_ptr<BaseNode> &x,
+								Bounding_Box &query_mbr, Bounding_Box &cur_mbr, FT x_prefix, FT y_prefix, size_t b, bool x_splitter){
+		auto flag = mbr_mbr_relation(cur_mbr, query_mbr);
+		if (flag < 0) {
+			sequence<Point> add = {}, remove = {};
+			return make_tuple(add ,remove);	//	no intersection
+		}
+		if (flag > 0){	// fully contained, call leaf_inte_diff 
+			return leaf_inte_diff(P, l, r, x, b);
+		}
+
+		auto f = [&](auto x){	//	filter a sequence of points in the query mbr
+			return point_in_mbr(x, query_mbr);
+		};
+
+		// intersected, need further recursive processing
+		if (!x){	//	inte could be nullptr if only one branch exists
+			sequence<Point> add = {};
+			auto remove = parlay::sequence<Point>::uninitialized(r - l);
+			size_t cnt = 0;
+			for (size_t i = l; i < r; i++){
+				if (f(P[i])){
+					parlay::assign_uninitialized(remove[cnt++], P[i]);
+				}
+			}
+			remove.resize(cnt);
+			// auto remove = parlay::filter(P.substr(l, r - l), f);
+			return make_tuple(add, remove);
+		}
+
+		if (x->is_leaf()){	//	Base case when we meet two leaf nodes
+			auto cur_leaf = static_cast<LeafNode*>(x.get());
+			auto lhs_records = parlay::make_slice(&P[l], &P[r]);
+			// for (size_t i = l; i < r; i++){	// in P[l..r] but not in the leaf
+			// 	bool flag = true; 
+			// 	for (size_t j = 0; j < cur_leaf->records.size(); j++){
+			// 		if (P[i].id == cur_leaf->records[j].id && P[i] == cur_leaf->records[j]){
+			// 			flag = false;
+			// 			break;
+			// 		}
+			// 	}
+			// 	// if (!point_in_mbr(P[i], query_mbr)) flag = false;
+			// 	if (flag && f(P[i])) remove.emplace_back(P[i]);
+			// }
+			// auto tmp_records = parlay::sequence<Point>::uninitialized(32);
+			// if (r - l > 32) tmp_records.resize(r - l);
+			// size_t cur = 0;
+			// for (size_t i = l; i < r; i++){
+			// 	parlay::assign_uninitialized(tmp_records[cur++], P[i]);
+			// }
+			// tmp_records.resize(cur);
+			return merge_pts(lhs_records, cur_leaf->records, f);
+			// remove = get_delete_p(tmp_records, cur_leaf->records, 0, cur_leaf->get_num_points(), f);
+			// add = get_delete_p(cur_leaf->records, P, l, r, f);
+
+			// for (size_t j = 0; j < cur_leaf->records.size(); j++){	// in the leaf but not in P[l..r]
+			// 	bool flag = true; 
+			// 	for (size_t i = l; i < r; i++){	
+			// 		if (P[i].id == cur_leaf->records[j].id && P[i] == cur_leaf->records[j]){
+			// 			flag = false;
+			// 			break;
+			// 		}
+			// 	}
+			// 	// if (!point_in_mbr(cur_leaf->records[j], query_mbr)) flag = false;
+			// 	if (flag && f(cur_leaf->records[j])) add.emplace_back(cur_leaf->records[j]);
+			// }
+			// return make_tuple(add, remove);
+		}
+		//	divide into two subcases
+		auto splitter = split_by_bit(P, l, r, b);
+		auto cur_inte = static_cast<InteNode*>(x.get());
+
+		auto [L_box, R_box, rx_prefix, ry_prefix] = compute_cur_box(cur_mbr, x_prefix, y_prefix, b, x_splitter);
+		// size_t shift_b = (b + 1) / 2;
+		// FT split_value = 1.0 * (1u << (shift_b - 1));
+
+		
+		// auto L_box = cur_mbr;
+		// auto R_box = cur_mbr;
+		// auto rx_prefix = x_prefix;
+		// auto ry_prefix = y_prefix;
+		// if (x_splitter){
+		// 	L_box.second.x = min(x_prefix + split_value - FT_EPS, L_box.second.x);
+		// 	R_box.first.x = max(x_prefix + split_value, R_box.first.x);
+		// 	rx_prefix += split_value;
+		// }
+		// else{
+		// 	L_box.second.y = min(y_prefix + split_value - FT_EPS, L_box.second.y);
+		// 	R_box.first.y = max(y_prefix + split_value, R_box.first.y);
+		// 	ry_prefix += split_value;
+		// }
+		sequence<Point> L_add, L_remove, R_add, R_remove;
+		auto diff_left = [&](){ tie(L_add, L_remove) = leaf_inte_diff(P, l, splitter, cur_inte->l_son, query_mbr, L_box, x_prefix, y_prefix, b - 1, !x_splitter); };
+		auto diff_right = [&](){ tie(R_add, R_remove) = leaf_inte_diff(P, splitter, r, cur_inte->r_son, query_mbr, R_box, rx_prefix, ry_prefix,  b - 1, !x_splitter); };
+		par_do_if(r - l + x->get_num_points() >= granularity_cutoff,
+			diff_left,
+			diff_right);
+		L_add.append(R_add);
+		L_remove.append(R_remove);
+		return make_tuple(L_add, L_remove);
+	}
+
+	auto Tree::diff(shared_ptr<BaseNode> &node1, shared_ptr<BaseNode> &node2, size_t b){
+		if (node1 == node2){	//	case0, no difference, all empty or point to the same (shared) node
+			// utils::fetch_and_add(&case0, 1);
+			sequence<Point> add = {}, remove = {};
+			return make_tuple(add, remove);
+		}
+		if (!node1){	//	case1, node1 is empty, we need to add all points in node2
+			// utils::fetch_and_add(&case1, 1);
+			sequence<Point> add = {}, remove = {};
+			add = collect_records(node2);
+			return make_tuple(add, remove);
+		}
+		if (!node2){	//	case1, node2 is empty, we need to remove all points in node1
+			// utils::fetch_and_add(&case1, 1);
+			sequence<Point> add = {}, remove = {};
+			remove = collect_records(node1); 
+			return make_tuple(add, remove);
+		}
+		// both are not empty, but they correspond to the same region
+		if (node1->is_leaf() && node2->is_leaf()){	// case2, two leafs
+			// utils::fetch_and_add(&case2, 1);
+			auto [add, remove] = leaf_leaf_diff(node1, node2);
+			return make_tuple(add, remove);
+		}
+		if (node1->is_leaf() && !node2->is_leaf()){	//	case3, a leaf and an inte
+			// utils::fetch_and_add(&case3, 1);
+			auto P = static_cast<LeafNode*>(node1.get())->records;
+			auto [add, remove] = leaf_inte_diff(P, 0, P.size(), node2, b);	
+			return make_tuple(add, remove);
+		}
+		if (!node1->is_leaf() && node2->is_leaf()){	//	case3, an inte and a leaf
+			// utils::fetch_and_add(&case3, 1);
+			auto P = static_cast<LeafNode*>(node2.get())->records;
+			auto [remove, add] = leaf_inte_diff(P, 0, P.size(), node1, b);	//	inversed due to the second one is leaf 
+			return make_tuple(add, remove);
+		}
+		//	case4, two inte
+		// utils::fetch_and_add(&case4, 1);
+		sequence<Point> L_add, L_remove, R_add, R_remove;
+		auto cur_inte1 = static_cast<InteNode*>(node1.get());
+		auto cur_inte2 = static_cast<InteNode*>(node2.get());
+		auto diff_left = [&](){tie(L_add, L_remove) = diff(cur_inte1->l_son, cur_inte2->l_son, b - 1); };	// both go left
+		auto diff_right = [&](){tie(R_add, R_remove) = diff(cur_inte1->r_son, cur_inte2->r_son, b - 1);	};	// both go right
+
+		par_do_if(node1->get_num_points() + node2->get_num_points() >= granularity_cutoff,
+			diff_left,
+			diff_right);
+
+		L_add.append(R_add);
+		L_remove.append(R_remove);
+		return make_tuple(L_add, L_remove);
+	}
+
+
+	
+	auto Tree::spatial_diff(shared_ptr<BaseNode> &node1, shared_ptr<BaseNode> &node2, Bounding_Box &query_mbr, Bounding_Box &cur_mbr, FT x_prefix, FT y_prefix, size_t b, bool x_splitter){
+		auto flag = mbr_mbr_relation(cur_mbr, query_mbr);
+		if (flag < 0){	// no intersection with the query region, skip
+			sequence<Point> add = {}, remove = {};
+			return make_tuple(add, remove);
+		}
+
+		// if (flag > 0){	//	case fully contained, just return everything in diff
+		// 	return diff(node1, node2, b);
+		// }
+
+		//	case overlapped, need to handle multiple cases
+		/* Case 0: no difference */
+		if (node1 == node2){
+			// cout << "go to 0" << endl;
+			sequence<Point> add = {}, remove = {};
+			return make_tuple(add, remove);
+		}
+		/* Case 1: node1 is empty, add all points from node2 */
+		if (!node1){
+			// cout << "go to 11" << endl;
+			// auto add = parlay::sequence<Point>::uninitialized(2 * node2->get_num_points());
+			// size_t cnt = 0;
+			sequence<Point> remove = {};
+			// range_report_node(node2, query_mbr, cur_mbr, x_prefix, y_prefix, b, x_splitter, cnt, add);
+			// add.resize(cnt);
+			auto add = collect_records(node2, query_mbr, cur_mbr, x_prefix, y_prefix, b, x_splitter);
+			return make_tuple(add, remove);
+		}
+		/* Case 1: node2 is empty, remove all points from node1 */
+		if (!node2){
+			// cout << "go to 12" << endl;
+			// auto remove = parlay::sequence<Point>::uninitialized(2 * node1->get_num_points());
+			// size_t cnt = 0;
+			sequence<Point> add = {};
+			// range_report_node(node1, query_mbr, cur_mbr, x_prefix, y_prefix, b, x_splitter, cnt, remove);
+			// remove.resize(cnt);
+			auto remove = collect_records(node1, query_mbr, cur_mbr, x_prefix, y_prefix, b, x_splitter);
+			return make_tuple(add, remove);
+		}
+		/* Case 2: two leaf nodes, need to scan both */
+		if (node1->is_leaf() && node2->is_leaf()){
+			// cout << "go to 21" << endl;
+			auto [add, remove] = leaf_leaf_diff(node1, node2, query_mbr);
+			return make_tuple(add, remove);	
+		}
+		/* Case 3: one of the nodes is leaf */
+		if (node1->is_leaf() && !node2->is_leaf()){
+			// cout << "go to 31" << endl;
+			auto P = static_cast<LeafNode*>(node1.get())->records;
+			auto [add, remove] = leaf_inte_diff(P, 0, P.size(), node2, query_mbr, cur_mbr, x_prefix, y_prefix, b, x_splitter);
+			return make_tuple(add, remove);
+		}
+		/* Case 3: the other possibility */
+		if (!node1->is_leaf() && node2->is_leaf()){
+			// cout << "go to 32" << endl;
+			auto P = static_cast<LeafNode*>(node2.get())->records;
+			auto [remove, add] = leaf_inte_diff(P, 0, P.size(), node1, query_mbr, cur_mbr, x_prefix, y_prefix, b, x_splitter);
+			return make_tuple(add, remove);
+		}
+		/* Case 4: two interior nodes, not fully overlapped */
+		auto cur_inte1 = static_cast<InteNode*>(node1.get());
+		auto cur_inte2 = static_cast<InteNode*>(node2.get());
+
+		auto [L_box, R_box, rx_prefix, ry_prefix] = compute_cur_box(cur_mbr, x_prefix, y_prefix, b, x_splitter);
+
+		sequence<Point> L_add, L_remove, R_add, R_remove;
+		auto diff_left = [&](){ tie(L_add, L_remove) = spatial_diff(cur_inte1->l_son, cur_inte2->l_son, query_mbr, L_box, x_prefix, y_prefix, b - 1, !x_splitter); };
+		auto diff_right = [&](){ tie(R_add, R_remove) = spatial_diff(cur_inte1->r_son, cur_inte2->r_son, query_mbr, R_box, rx_prefix, ry_prefix, b - 1, !x_splitter); };
+		diff_left();
+		diff_right();
+		// par_do_if(node1->get_num_points() + node2->get_num_points() >= granularity_cutoff, 
+		// 	diff_left,
+		// 	diff_right);
+		L_add.append(R_add);
+		L_remove.append(R_remove);
+
+		return make_tuple(L_add, L_remove);
+	}
+
+	auto Tree::two_version_diff(shared_ptr<BaseNode> &node1, shared_ptr<BaseNode> &node2){
+		// case0 = 0, case1 = 0, case2 = 0, case3 = 0, case4 = 0;
+		// case0_time = 0, case1_time = 0, case2_time = 0, case3_time = 0, case4_time = 0;
+		auto [add, remove] = diff(node1, node2, 64);
+		return make_tuple(add, remove);
+	}
+
+	auto Tree::spatial_two_version_diff(shared_ptr<BaseNode> &node1, shared_ptr<BaseNode> &node2, Bounding_Box &query_mbr, Bounding_Box &cur_mbr){
+		return spatial_diff(node1, node2, query_mbr, cur_mbr, 0.0, 0.0, 64, true);
+	}
+
+	//	current return conflict only
+	auto Tree::merge(shared_ptr<BaseNode> &base, shared_ptr<BaseNode> &node1, shared_ptr<BaseNode> &node2){
+		parlay::internal::timer t("merge", false);
+		auto [add1, remove1] = two_version_diff(base, node1);
+		auto [add2, remove2] = two_version_diff(base, node2); 
+		t.next("diff time");
+
+		// cout << "1 sz: " << add1.size() << ", " << remove1.size() << endl; 
+		// cout << "2 sz: " << add2.size() << ", " << remove2.size() << endl; 
+		// for (auto &pt: add1) {cout << pt.id << ":" << pt.x << "," << pt.y << " ";} cout << endl;
+		// for (auto &pt: remove1) {cout << pt.id << ":" << pt.x << "," << pt.y << " ";} cout << endl;
+
+		auto [insert1, delete1, update1] = filter_diff_results(add1, remove1);
+		// cout << insert1.size() << " " << delete1.size() << " " << update1.size() << endl;
+		// for (auto &pt: update1) {cout << pt.id << ":" << pt.x << "," << pt.y << " ";} cout << endl;
+		auto [insert2, delete2, update2] = filter_diff_results(add2, remove2);
+		// cout << insert2.size() << " " << delete2.size() << " " << update2.size() << endl;
+		// for (auto &pt: update2) {cout << pt.id << ":" << pt.x << "," << pt.y << " ";} cout << endl;
+
+		auto [no_conflict_insert, conflict_insert] = merge_by_id_with_conflict(insert1, insert2);	// insert conflict
+		auto [no_conflict_update, conflict_update] = merge_by_id_with_conflict(update1, update2);	// update conflict
+		//	delate = delete + update
+		auto [no_conflict_delete, conflict_delete] = merge_by_id_with_conflict(delete1, update2);	//	delete and update conflict
+		auto [no_conflict_delete1, conflict_delete1] = merge_by_id_with_conflict(delete2, update1);	//	delete and update conflict, another case
+
+		no_conflict_delete.append(no_conflict_delete1);
+		conflict_delete.append(conflict_delete1);
+		t.next("conflict time");
+
+		auto new_ver = commit(base, no_conflict_insert, no_conflict_delete);
+		t.next("commit time");
+
+		return make_tuple(new_ver, conflict_insert, conflict_update, conflict_delete);
+	}
+
+	Tree::Tree(size_t _leaf_sz){
+		leaf_size = _leaf_sz;
+	}
+
+	void Tree::clear(){
+		root.reset();
+		multi_version_roots.clear();
+	}
+
+	void Tree::delete_merge_nodes(shared_ptr<BaseNode> &L, shared_ptr<BaseNode> &R, InteNode* cur_node){
+		// deal with MBR, covered points of parent
+		auto L_num_pts = (L == nullptr) ? 0 : L->get_num_points();
+		auto R_num_pts = (R == nullptr) ? 0 : R->get_num_points();
+
+		cur_node->num_pts = L_num_pts + R_num_pts;
+		cur_node->l_son = move(L);
+		cur_node->r_son = move(R);
+	}
+
+	void Tree::merge_nodes(shared_ptr<BaseNode> &L, shared_ptr<BaseNode> &R, shared_ptr<InteNode> &cur_node){
+		// deal with MBR, covered points of parent
+		auto L_num_pts = L == nullptr ? 0 : L->get_num_points();
+		auto R_num_pts = R == nullptr ? 0 : R->get_num_points();
+
+		cur_node->num_pts = L_num_pts + R_num_pts;
+		cur_node->l_son = move(L);
+		cur_node->r_son = move(R);
+		// if (L == nullptr) {
+		// 	cur_node->num_pts = R->get_num_points();
+		// }
+		// else if (R == nullptr){
+		// 	cur_node->num_pts = L->get_num_points();
+		// } 
+		// else {
+		// 	cur_node->num_pts = L->get_num_points() + 
+		// 						R->get_num_points();
+		// }
+		// cur_node->l_son = move(L);
+		// cur_node->r_son = move(R);
+	}
+
+	shared_ptr<InteNode> Tree::create_internal(shared_ptr<BaseNode> &L, shared_ptr<BaseNode> &R){
+  		// parlay::internal::timer t;
+		// t.start();
+		shared_ptr<InteNode> cur_node(new InteNode());
+		
+		// augmented changes happen here
+		merge_nodes(L, R, cur_node);
+		// t.next_time();
+		// zd_build_break_down.inte_time += t.total_time();
+		return cur_node;		
+	}
+
+	shared_ptr<LeafNode> Tree::create_leaf(sequence<Point> &P, size_t l, size_t r, size_t b){
+		auto cur_records = parlay::make_slice(&P[l], &P[r]);
+		shared_ptr<LeafNode> cur_node(new LeafNode(cur_records));
+		return cur_node;
+	}
+
+	shared_ptr<BaseNode> Tree::build(sequence<Point> &P, size_t l, size_t r, size_t b){
+		if (!b || (r - l <= leaf_size)){
+			return create_leaf(P, l, r, b);
+			// return nullptr;	//	measure leaf time
+		}
+
+		// parlay::internal::timer t;
+		// t.start();
+		auto splitter = split_by_bit(P, l, r, b);
+		// t.next_time();
+		// zd_build_break_down.split_time += t.total_time();
+		shared_ptr<BaseNode> L = nullptr;
+		shared_ptr<BaseNode> R = nullptr;
+		auto build_left = [&](){ if (l < splitter) L = build(P, l, splitter, b - 1); }; 
+		auto build_right = [&](){ if (splitter < r) R = build(P, splitter, r, b - 1); }; 
+		par_do_if(r - l >= granularity_cutoff,
+			build_left, 
+			build_right);
+		return create_internal(L, R);
+	}
+
+	void Tree::build(sequence<Point> &P){
+		if (!P.size()) return;
+		root = build(P, 0, P.size(), 64);
+		// multi_version_roots.emplace_back(root);
+	}
+
+	void Tree::gc_nocheck(shared_ptr<BaseNode> &x){
+		if (!x) return;
+		if (x->is_leaf()){
+			x.reset();
+			return;
+		}
+			
+		auto cur_inte = static_cast<InteNode*>(x.get());
+		auto gc_left = [&](){ gc_nocheck(cur_inte->l_son); };
+		auto gc_right = [&](){	gc_nocheck(cur_inte->r_son); };
+		par_do_if(x->get_num_points() > granularity_cutoff,
+			gc_left, gc_right);
+
+		x.reset();
+	}
+
+	void Tree::garbage_collect(shared_ptr<BaseNode> &base, shared_ptr<BaseNode> &x){
+		if (!x || x == base) return;
+		if (x->is_leaf()){
+			x.reset();
+			return;
+		}
+		
+		if (!base || base->is_leaf()){	//	base is null or leaf, just garbage_collect all nodes in x.
+			gc_nocheck(x);
+		}
+
+		auto base_inte =static_cast<InteNode*>(base.get()); 
+		auto cur_inte = static_cast<InteNode*>(x.get());
+
+		auto gc_left = [&](){ garbage_collect(base_inte->l_son, cur_inte->l_son); };
+		auto gc_right = [&](){	garbage_collect(base_inte->r_son, cur_inte->r_son); };
+
+		par_do_if(x->get_num_points() >= granularity_cutoff,
+			gc_left, gc_right); 
+		
+		x.reset();
+	}
+
+	void Tree::batch_insert_sorted_node(shared_ptr<BaseNode> &x, sequence<Point> &P, size_t l, size_t r, size_t b){
+		if (x == nullptr){
+			x = build(P, l, r, b);
+			return;
+		}
+		auto less = [&](auto lhs, auto rhs){
+			return lhs.morton_id < rhs.morton_id || 
+					(lhs.morton_id == rhs.morton_id && lhs.id < rhs.id);
+			// auto msd = 0;
+			// if (geobase::less_msb(static_cast<unsigned int>(lhs.x) ^ static_cast<unsigned int>(rhs.x), static_cast<unsigned int>(lhs.y) ^ static_cast<unsigned int>(rhs.y))) 
+			// 	msd = 1;
+			// return !msd ? lhs.x < rhs.x : lhs.y < rhs.y;
+		};
+		if (x->is_leaf()){
+			auto cur_leaf = static_cast<LeafNode*>(x.get());
+			// auto cur_records = P.substr(l, r - l);
+			auto cur_records = parlay::make_slice(&P[l], &P[r]);
+			if (!b || cur_leaf->records.size() + cur_records.size() <= leaf_size){	// current leaf is not full
+				cur_leaf->records = parlay::merge(cur_leaf->records, parlay::make_slice(&P[l], &P[r]), less);
+				// cur_leaf->records = geobase::morton_merge(cur_leaf->records, cur_records);
+
+				#ifdef USE_MBR
+				auto cur_mbr = get_mbr(cur_records);
+				cur_leaf->mbr = merge_mbr(cur_leaf->mbr, cur_mbr);
+				#endif
+
+				return;
+			}
+			else{
+				auto new_points = parlay::merge(cur_leaf->records, parlay::make_slice(&P[l], &P[r]), less);
+				// auto new_points = geobase::morton_merge(cur_leaf->records, cur_records);
+				x = build(new_points, 0, new_points.size(), b);
+				return;
+			}
+		}
+		auto splitter = split_by_bit(P, l, r, b);
+		auto cur_inte = static_cast<InteNode*>(x.get());
+		#ifdef SEQ
+		if (l < splitter){
+			batch_insert_sorted_node(cur_inte->l_son, P, l, splitter, b - 1);
+		}
+		if (splitter < r){
+			batch_insert_sorted_node(cur_inte->r_son, P, splitter, r, b - 1);
+		}
+		#else
+		auto insert_left = [&](){ if (l < splitter){ batch_insert_sorted_node(cur_inte->l_son, P, l, splitter, b - 1); }; };
+		auto insert_right = [&](){ if (splitter < r){ batch_insert_sorted_node(cur_inte->r_son, P, splitter, r, b - 1); }; };
+		par_do_if(r - l >= granularity_cutoff,
+			insert_left,
+			insert_right); 
+		#endif
+
+		delete_merge_nodes(cur_inte->l_son, cur_inte->r_son, cur_inte);
+	}
+
+	void Tree::batch_insert_sorted(sequence<Point> &P){
+		if (!P.size()) return;
+		if (root == nullptr) build(P);
+		else batch_insert_sorted_node(root, P, 0, P.size(), 64);
+	}
+
+	shared_ptr<BaseNode> Tree::node_copy(shared_ptr<BaseNode> &x){
+		if (!x) return nullptr;
+		if (x->is_leaf()){
+			// cout << "copying leaf node" << endl;
+			// parlay::internal::timer t("leaf time");
+
+			auto cur_leaf = static_cast<LeafNode*>(x.get());
+			shared_ptr<LeafNode> new_leaf(new LeafNode(cur_leaf->records));
+
+			// utils::fetch_and_add(&zd_leaf_copy_time, t.next_time());
+			// zd_leaf_copy_time += t.next_time();
+			return new_leaf;
+		}
+		else{
+			// cout << "copying inte node" << endl;
+			// parlay::internal::timer t("inte time");
+
+			auto cur_inte = static_cast<InteNode*>(x.get());
+			shared_ptr<InteNode> new_inte(new InteNode());
+			new_inte->num_pts = cur_inte->num_pts;
+			new_inte->l_son = cur_inte->l_son;
+			new_inte->r_son = cur_inte->r_son;
+
+			// utils::fetch_and_add(&zd_inte_copy_time, t.next_time());
+			// zd_inte_copy_time += t.next_time();
+			return new_inte;
+		}
+	}
+
+	template<typename Func>
+	shared_ptr<BaseNode> Tree::node_copy(shared_ptr<BaseNode> &x, Func &f){
+		if (!x) return nullptr;
+		if (x->is_leaf()){
+			// cout << "copying leaf node" << endl;
+			auto cur_leaf = static_cast<LeafNode*>(x.get());
+
+			shared_ptr<LeafNode> new_leaf(new LeafNode(cur_leaf->records, f));
+			return new_leaf;
+		}
+		else{
+			// cout << "copying inte node" << endl;
+			auto cur_inte = static_cast<InteNode*>(x.get());
+			shared_ptr<InteNode> new_inte(new InteNode());
+			new_inte->num_pts = cur_inte->num_pts;
+			new_inte->l_son = cur_inte->l_son;
+			new_inte->r_son = cur_inte->r_son;
+			return new_inte;
+		}
+	}
+
+	void Tree::multi_version_batch_insert_sorted_node(shared_ptr<BaseNode> &x, sequence<Point> &P, size_t l, size_t r, size_t b){
+		// cout << "current is leaf? " << x->is_leaf() << ", ";
+		// cout << "insert " << r - l << " points, l = " << l << ", r = " << r << ", b = " << b << endl;
+		if (x == nullptr){
+			x = build(P, l, r, b);
+			return;
+		}
+		auto less = [&](auto lhs, auto rhs){
+			return lhs.morton_id < rhs.morton_id ||
+					(lhs.morton_id == rhs.morton_id && lhs.id < rhs.id);
+		};
+		if (x->is_leaf()){
+			auto cur_leaf = static_cast<LeafNode*>(x.get());
+			auto cur_records = parlay::make_slice(&P[l], &P[r]);
+			if (!b || cur_leaf->records.size() + cur_records.size() <= leaf_size){	// current leaf is not full
+				cur_leaf->records = parlay::merge(cur_leaf->records, parlay::make_slice(&P[l], &P[r]), less);
+				// cur_leaf->records = geobase::morton_merge(cur_leaf->records, cur_records);
+				return;
+			}
+			else{
+				auto new_points = parlay::merge(cur_leaf->records, parlay::make_slice(&P[l], &P[r]), less);
+				x = build(new_points, 0, new_points.size(), b);
+				return;
+			}
+		}
+		auto splitter = split_by_bit(P, l, r, b);
+		auto cur_inte = static_cast<InteNode*>(x.get());
+		auto new_l_son(cur_inte->l_son);
+		auto new_r_son(cur_inte->r_son);
+
+		auto insert_left = [&](){ 
+			if (l < splitter){ 
+				// cout << "node copy begin" << endl;
+				new_l_son = node_copy(cur_inte->l_son);
+				// cout << "node copy end" << endl;
+				multi_version_batch_insert_sorted_node(new_l_son, P, l, splitter, b - 1);
+			};
+		};
+		auto insert_right = [&](){ 
+			if (splitter < r){ 
+				// cout << "node copy begin" << endl;
+				new_r_son = node_copy(cur_inte->r_son);
+				// cout << "node copy end" << endl;
+				multi_version_batch_insert_sorted_node(new_r_son, P, splitter, r, b - 1); 
+			};
+		};
+
+		par_do_if(r - l >= granularity_cutoff,
+			insert_left,
+			insert_right); 
+			
+		delete_merge_nodes(new_l_son, new_r_son, cur_inte);
+	}
+
+	shared_ptr<BaseNode> Tree::multi_version_batch_insert_sorted(sequence<Point> &P, shared_ptr<BaseNode> &old_root){
+		auto new_root = node_copy(old_root);
+		multi_version_batch_insert_sorted_node(new_root, P, 0, P.size(), 64);
+		// multi_version_roots.emplace_back(new_root);
+		return new_root;
+	}
+
+	void Tree::batch_delete_sorted_node(shared_ptr<BaseNode> &x, sequence<Point> &P, size_t l, size_t r, size_t b){
+		if (x == nullptr){
+			return;
+		}
+		// auto not_in = [&](auto x){
+		// 	for (size_t i = l; i < r; i++){
+		// 		if (x.id == P[i].id) return false;
+		// 	}
+		// 	return true;
+		// };
+		if (x->is_leaf()){
+			auto cur_leaf = static_cast<LeafNode*>(x.get());
+			auto tmp_records = parlay::make_slice(&P[l], &P[r]);
+			auto [added, removed] = merge_pts(cur_leaf->records, tmp_records);
+			cur_leaf->records = removed;
+			// cur_leaf->records = parlay::filter(cur_leaf->records, not_in);
+			return;
+		}
+		auto splitter = split_by_bit(P, l, r, b);
+		auto cur_inte = static_cast<InteNode*>(x.get());
+		auto delete_left = [&](){ if (l < splitter){ batch_delete_sorted_node(cur_inte->l_son, P, l, splitter, b - 1); }; };
+		auto delete_right = [&](){ if (splitter < r){ batch_delete_sorted_node(cur_inte->r_son, P, splitter, r, b - 1); }; };
+		par_do_if(r - l >= granularity_cutoff,
+			delete_left,
+			delete_right); 
+
+		delete_merge_nodes(cur_inte->l_son, cur_inte->r_son, cur_inte);
+	}
+
+	void Tree::multi_version_batch_delete_sorted_node(shared_ptr<BaseNode> &x, sequence<Point> &P, size_t l, size_t r, size_t b){
+		if (x == nullptr){
+			cout << "Error, nullptr found" << endl;
+			cout << l << ", " << r << endl;
+		}
+		if (x->is_leaf()){
+			auto cur_leaf = static_cast<LeafNode*>(x.get());
+			cur_leaf->records = get_delete_p(cur_leaf->records, P, l, r);
+
+			// for (auto i = l; i < r; i++) cout << P[i].morton_id << ", " << P[i].id << " "; cout << endl;
+			// for (auto pt: cur_leaf->records) cout << pt.morton_id << ", " << pt.id << " "; cout << endl;
+
+			// parlay::sequence<bool> to_remove(cur_leaf->records.size(), true);
+			// auto not_in = [&](auto x){
+			// 	for (size_t i = l; i < r; i++){
+			// 		if (x.id == P[i].id) return false;
+			// 	}
+			// 	return true;
+			// };
+			// auto for_debug = parlay::filter(cur_leaf->records, not_in);
+
+			// auto [added, removed] = merge_pts(cur_leaf->records, P.substr(l, r - l));
+			// cur_leaf->records = removed;
+
+			// if (for_debug != removed){
+			// 	cout << "[Error]" << for_debug.size() << ", " << removed.size() << endl;
+			// }
+
+			if (!cur_leaf->records.size()) x.reset();
+			return;
+		}
+		visited_inte++;
+
+		auto splitter = split_by_bit(P, l, r, b);
+		auto cur_inte = static_cast<InteNode*>(x.get());
+		auto new_l_son(cur_inte->l_son);
+		auto new_r_son(cur_inte->r_son);
+
+		auto delete_left = [&](){ 
+			if (l < splitter){ 
+				new_l_son = node_copy(cur_inte->l_son);
+				multi_version_batch_delete_sorted_node(new_l_son, P, l, splitter, b - 1); 
+			}; 
+		};
+		auto delete_right = [&](){
+			if (splitter < r){ 
+				new_r_son = node_copy(cur_inte->r_son);
+				multi_version_batch_delete_sorted_node(new_r_son, P, splitter, r, b - 1); 
+			}; 
+		};
+
+		par_do_if(r - l >= granularity_cutoff,
+			delete_left,
+			delete_right); 
+
+		auto less = [&](auto lhs, auto rhs){
+			return lhs.morton_id < rhs.morton_id ||
+					(lhs.morton_id == rhs.morton_id && lhs.id < rhs.id);
+		};
+
+		cur_inte->l_son = new_l_son;
+		cur_inte->r_son = new_r_son;
+		if (!new_l_son && !new_r_son) x.reset();
+		else{
+			if (!new_l_son) {
+				if (new_r_son->get_num_points() <= leaf_size) x = move(new_r_son);
+			}
+			else {
+				if (!new_r_son) {
+					if (new_l_son->get_num_points() <= leaf_size) x = move(new_l_son);
+				}
+				else{
+			 		if (new_l_son->get_num_points() + new_r_son->get_num_points() <= leaf_size){
+						auto L = static_cast<LeafNode*>(new_l_son.get());
+						auto R = static_cast<LeafNode*>(new_r_son.get());
+						auto cur_records = parlay::merge(L->records, R->records, less);
+						x = create_leaf(cur_records, 0, cur_records.size(), 0);
+					}
+					else{
+						delete_merge_nodes(new_l_son, new_r_son, cur_inte);
+					}
+				}
+			}
+			// if (!new_l_son) {
+			// 	if (new_r_son->get_num_points() <= leaf_size) x = move(new_r_son);
+			// }
+			// else if (!new_r_son) {
+			// 	if (new_l_son->get_num_points() <= leaf_size) x = move(new_l_son);
+			// }
+			// else if (new_l_son->get_num_points() + new_r_son->get_num_points() <= leaf_size){
+			// // if (cur_inte->l_son->get_num_points() + cur_inte->r_son->get_num_points() <= leaf_size){
+			// 	auto L = static_cast<LeafNode*>(new_l_son.get());
+			// 	auto R = static_cast<LeafNode*>(new_r_son.get());
+			// 	auto cur_records = parlay::merge(L->records, R->records, less);
+			// 	x = create_leaf(cur_records, 0, cur_records.size(), 0);
+			// }
+			// else{
+			// 	delete_merge_nodes(new_l_son, new_r_son, cur_inte);
+			// }
+			auto L_num_pts = cur_inte->l_son == nullptr ? 0 : cur_inte->l_son->get_num_points();
+			auto R_num_pts = cur_inte->r_son == nullptr ? 0 : cur_inte->r_son->get_num_points();
+			cur_inte->num_pts = L_num_pts + R_num_pts;
+		}
+
+
+	}
+
+	shared_ptr<BaseNode> Tree::multi_version_batch_delete_sorted(sequence<Point> &P, shared_ptr<BaseNode> &old_root){
+		auto new_root = node_copy(old_root);
+		// cout << "copy finished" << endl;
+		multi_version_batch_delete_sorted_node(new_root, P, 0, P.size(), 64);
+		// multi_version_roots.emplace_back(new_root);
+		return new_root;
+	}
+
+	void Tree::batch_delete_sorted(sequence<Point> &P){
+		if (!P.size() || root == nullptr) return;
+		else batch_delete_sorted_node(root, P, 0, P.size(), 64);
+	}
+
+	int Tree::tree_hash(shared_ptr<BaseNode> &x){
+		node_cnt++;
+		if (x->is_leaf()){
+			leaf_cnt++;
+			int ret = 0;
+			auto cur_leaf = static_cast<LeafNode*>(x.get());
+			// cout << "leaf size = " << cur_leaf->records.size() << endl;
+			record_cnt += cur_leaf->records.size();
+			for (auto &pt: cur_leaf->records){
+				int x_val = static_cast<int>(pt.x);
+				int y_val = static_cast<int>(pt.y);
+				ret ^= parlay::hash64(x_val ^ y_val);
+			}
+			return parlay::hash64(ret);
+		}
+		int L = 0, R = 0;
+		auto cur_inte = static_cast<InteNode*>(x.get());
+		if (cur_inte->l_son != nullptr) L = tree_hash(cur_inte->l_son);
+		if (cur_inte->r_son != nullptr) R = tree_hash(cur_inte->r_son);
+		return parlay::hash64(L ^ R);
+	}
+
+	const unsigned long long MOD = 1e9 + 7;
+	int Tree::tree_hash_non_associative(shared_ptr<BaseNode> &x){
+		node_cnt++;
+		if (x->is_leaf()){
+			leaf_cnt++;
+			int ret = 0;
+			auto cur_leaf = static_cast<LeafNode*>(x.get());
+			// cout << "leaf size = " << cur_leaf->records.size() << endl;
+			record_cnt += cur_leaf->records.size();
+			auto cur = 1;
+			for (auto &pt: cur_leaf->records){
+				int x_val = static_cast<int>(pt.x);
+				int y_val = static_cast<int>(pt.y);
+				ret = (ret + (cur * x_val % MOD) + (cur * y_val % MOD)) % MOD;
+				cur++;
+			}
+			// cout << ret << endl;
+			return parlay::hash64(ret);
+		}
+		int L = 0, R = 0;
+		auto cur_inte = static_cast<InteNode*>(x.get());
+		if (cur_inte->l_son != nullptr) L = tree_hash_non_associative(cur_inte->l_son);
+		if (cur_inte->r_son != nullptr) R = tree_hash_non_associative(cur_inte->r_son);
+		R = (2 * R) % MOD;
+		return parlay::hash64(L ^ R);
+	}
+
+	template<typename LEAF_SZ_MAP>
+	void collect_leaf_size(shared_ptr<BaseNode> &x, LEAF_SZ_MAP &mmp){
+		if (x->is_leaf()){
+			auto cur_leaf = static_cast<LeafNode*>(x.get());
+			mmp[cur_leaf->get_num_points()]++;
+			return;
+		}
+		auto cur_inte = static_cast<InteNode*>(x.get());
+		if (cur_inte->l_son != nullptr) collect_leaf_size(cur_inte->l_son, mmp);
+		if (cur_inte->r_son != nullptr) collect_leaf_size(cur_inte->r_son, mmp);
+	}
+
+	template<typename NODE_MAP>
+	void node_traverse(shared_ptr<BaseNode> &x, NODE_MAP &mmp){
+		mmp[x] = 1;	//	node appears
+		if (x->is_leaf()){
+			return;
+		}
+		auto cur_inte = static_cast<InteNode*>(x.get());
+		if (cur_inte->l_son != nullptr) node_traverse(cur_inte->l_son, mmp);
+		if (cur_inte->r_son != nullptr) node_traverse(cur_inte->r_son, mmp);
+	}
+
+	//	traverse sequentially
+	template<typename NodeMap>
+	void Tree::get_tree_statistics(shared_ptr<BaseNode> &x, tree_stat &stat, NodeMap &mmp){
+		if (x->is_leaf()){
+			auto cur_leaf = static_cast<LeafNode*>(x.get());
+			if (!mmp[x]) {
+				stat.num_leaf_nodes++;
+				stat.mem_leaf_nodes += sizeof(LeafNode) + cur_leaf->records.capacity() * sizeof(Point);
+				mmp[x] = 1;
+			}
+			return;
+		}
+		if (!mmp[x]){
+			stat.num_inte_nodes++;
+			stat.mem_inte_nodes += sizeof(InteNode);
+			mmp[x] = 1;
+		}
+		auto cur_inte = static_cast<InteNode*>(x.get());
+		if (cur_inte->l_son) get_tree_statistics(cur_inte->l_son, stat, mmp);
+		if (cur_inte->r_son) get_tree_statistics(cur_inte->r_son, stat, mmp);
+	}
+
+	auto Tree::get_tree_statistics(){
+		tree_stat stat;
+		unordered_map<shared_ptr<BaseNode>, bool> node_map;
+		for (auto &rt: multi_version_roots){
+			if (!rt){
+				cout << "Released version" << endl;
+				continue;
+			}
+			get_tree_statistics(rt, stat, node_map);
+		}
+		return stat;
+	}
+	
+	auto Tree::leaf_size_status(){
+		unordered_map<int, int> leaf_map = {};
+		for (auto &rt: multi_version_roots){
+			if (rt == nullptr){
+				cout << "Released version" << endl;
+				continue;
+			}
+			collect_leaf_size(rt, leaf_map);
+		}
+		return leaf_map;
+	}
+
+	auto Tree::leaf_size_status(shared_ptr<BaseNode>& rt){
+		unordered_map<int, int> leaf_map = {};
+		if (rt == nullptr) return leaf_map;
+		collect_leaf_size(rt, leaf_map);
+		return leaf_map;
+	}
+
+	auto Tree::print_leaf(shared_ptr<BaseNode> &x){
+		if (x->is_leaf()){
+			auto cur_leaf = static_cast<LeafNode*>(x.get());
+			cur_leaf->print_records();
+			return;
+		}
+		auto cur_inte = static_cast<InteNode*>(x.get());
+		if (cur_inte->l_son != nullptr) print_leaf(cur_inte->l_son);
+		if (cur_inte->r_son != nullptr) print_leaf(cur_inte->r_son);
+	}
+
+	
+
+	size_t Tree::num_of_nodes(){
+		unordered_map<shared_ptr<BaseNode>, bool> node_map;
+		for (auto &rt: multi_version_roots){
+			if (rt == nullptr){
+				cout << "Released version" << endl;
+				continue;
+			}
+			node_traverse(rt, node_map);
+			cout << "current version tree nodes: " << node_map.size() << endl;
+		}
+		return node_map.size();
+	}
+
+	size_t Tree::range_count_node(shared_ptr<BaseNode> &x, Bounding_Box &query_mbr, Bounding_Box &cur_mbr, FT x_prefix, FT y_prefix, size_t b, bool x_splitter){
+		// print_mbr(cur_mbr);
+		// print_mbr(query_mbr);
+		int flag = mbr_mbr_relation(cur_mbr, query_mbr);
+		if (flag < 0) return 0;
+		if (flag > 0) {
+			// cout << x->get_num_points() << endl;
+			return x->get_num_points();
+		}
+		if (x->is_leaf()){	// we have to scan the leaf to report the number of points;
+			size_t ret = 0;
+			auto cur_leaf = static_cast<LeafNode*>(x.get());
+			for (auto &p: cur_leaf->records){
+				if (point_in_mbr(p, query_mbr)){
+					ret += 1;
+				}
+			}
+			// cout << ret << endl;
+			return ret;
+		}
+		else{
+			auto cur_inte = static_cast<InteNode*>(x.get());
+			FT splitter = 1.0 * (1u << (b - 1));
+			size_t ret_L = 0, ret_R = 0;
+			if (cur_inte->l_son != nullptr) {
+				auto L_box = cur_mbr;
+				if (x_splitter){
+					L_box.second.x = min(x_prefix + splitter - FT_EPS, L_box.second.x);
+					ret_L = range_count_node(cur_inte->l_son, query_mbr, L_box, x_prefix, y_prefix, b, !x_splitter);
+				}
+				else{
+					L_box.second.y = min(y_prefix + splitter - FT_EPS, L_box.second.y);
+					ret_L = range_count_node(cur_inte->l_son, query_mbr, L_box, x_prefix, y_prefix, b - 1, !x_splitter);
+				}
+			}
+			if (cur_inte->r_son != nullptr) {
+				auto R_box = cur_mbr;
+				if (x_splitter){
+					R_box.first.x = max(x_prefix + splitter, R_box.first.x);
+					ret_R = range_count_node(cur_inte->r_son, query_mbr, R_box, x_prefix + splitter, y_prefix, b, !x_splitter);
+				}
+				else{
+					R_box.first.y = max(y_prefix + splitter, R_box.first.y);
+					ret_R = range_count_node(cur_inte->r_son, query_mbr, R_box, x_prefix, y_prefix + splitter, b - 1, !x_splitter);
+				}
+			}
+			return ret_L + ret_R;
+		}
+		return -1; // unexpected error happens if the code runs to here.
+	}
+
+	size_t Tree::range_count(Bounding_Box &query_mbr, Bounding_Box &cur_mbr){
+		// size_t ret = range_count_node(root, query_mbr, cur_mbr, true);		
+		size_t ret = range_count_node(root, query_mbr, cur_mbr, 0.0, 0.0, 32, true);		
+		return ret;
+	}
+
+	size_t Tree::range_count(shared_ptr<BaseNode> &x, Bounding_Box &query_mbr, Bounding_Box &cur_mbr){
+		// size_t ret = range_count_node(root, query_mbr, cur_mbr, true);		
+		size_t ret = range_count_node(x, query_mbr, cur_mbr, 0.0, 0.0, 32, true);		
+		return ret;
+	}
+
+	template <class Out> 
+	void Tree::range_report_node(shared_ptr<BaseNode> &x, Bounding_Box &query_mbr, Bounding_Box &cur_mbr, FT x_prefix, FT y_prefix, size_t b, bool x_splitter, size_t &cnt, Out &out){
+		if (!x){
+			return;
+		}
+		// print_mbr(cur_mbr);
+		// print_mbr(query_mbr);
+		auto flag = mbr_mbr_relation(cur_mbr, query_mbr);
+		if (flag < 0) return;
+
+		if (x->is_leaf()){
+			auto cur_leaf = static_cast<LeafNode*>(x.get());
+			for (auto &p: cur_leaf->records){
+				if (point_in_mbr(p, query_mbr)){
+					out[cnt++] = p;
+				}
+			}
+			return;
+		}
+		auto cur_inte = static_cast<InteNode*>(x.get());
+		auto [L_box, R_box, rx_prefix, ry_prefix] = compute_cur_box(cur_mbr, x_prefix, y_prefix, b, x_splitter);
+		range_report_node(cur_inte->l_son, query_mbr, L_box, x_prefix, y_prefix, b - 1, !x_splitter, cnt, out);
+		range_report_node(cur_inte->r_son, query_mbr, R_box, rx_prefix, ry_prefix, b - 1, !x_splitter, cnt, out);
+
+
+		// FT splitter = 1.0 * (1u << (b - 1));
+		// if (cur_inte->l_son != nullptr){
+		// 	auto L_box = cur_mbr;
+		// 	if (x_splitter){
+		// 		L_box.second.x = min(x_prefix + splitter - FT_EPS, L_box.second.x);
+		// 		if (mbr_mbr_relation(L_box, query_mbr) >= 0) range_report_node(cur_inte->l_son, query_mbr, L_box, x_prefix, y_prefix, b, !x_splitter, cnt, out);
+		// 	}
+		// 	else{
+		// 		L_box.second.y = min(y_prefix + splitter - FT_EPS, L_box.second.y);
+		// 		if (mbr_mbr_relation(L_box, query_mbr) >= 0) range_report_node(cur_inte->l_son, query_mbr, L_box, x_prefix, y_prefix, b - 1, !x_splitter, cnt, out);
+		// 	}
+		// }
+		// if (cur_inte->r_son != nullptr){
+		// 	auto R_box = cur_mbr;
+		// 	if (x_splitter){
+		// 		R_box.first.x = max(x_prefix + splitter, R_box.first.x);
+ 		// 		if (mbr_mbr_relation(R_box, query_mbr) >= 0) range_report_node(cur_inte->r_son, query_mbr, R_box, x_prefix + splitter, y_prefix, b, !x_splitter, cnt, out);
+		// 	}
+		// 	else{
+		// 		R_box.first.y = max(y_prefix + splitter, R_box.first.y);
+ 		// 		if (mbr_mbr_relation(R_box, query_mbr) >= 0) range_report_node(cur_inte->r_son, query_mbr, R_box, x_prefix, y_prefix + splitter, b - 1, !x_splitter, cnt, out);
+		// 	}
+		// }
+	}
+
+	template <class Out>
+	void Tree::range_report(Bounding_Box &query_mbr, Bounding_Box &cur_mbr, size_t &cnt, Out &out){
+		// range_report_node(root, query_mbr, cur_mbr, 0.0, 0.0, 32, true, cnt, out);
+		range_report_node(root, query_mbr, cur_mbr, 0.0, 0.0, 64, true, cnt, out);
+	}
+
+	template <class Out>
+	void Tree::range_report(shared_ptr<BaseNode> &x, Bounding_Box &query_mbr, Bounding_Box &cur_mbr, size_t &cnt, Out &out){
+		range_report_node(x, query_mbr, cur_mbr, 0.0, 0.0, 32, true, cnt, out);
+	}
+
+	#ifdef USE_MBR
+	template <class T>
+	void Tree::knn_report_node(shared_ptr<BaseNode> &x, size_t &k, Point* query_point, T &nn_res){
+		if (x->is_leaf()){
+			auto cur_leaf = static_cast<LeafNode*>(x.get());
+			for (auto &p: cur_leaf->records){
+				auto cur_sqrdis = point_point_sqrdis(p, query_point);
+				if (nn_res.size() < k){
+					nn_res.push({p, cur_sqrdis});
+				}
+				else if (cur_sqrdis < nn_res.top().second){
+					nn_res.pop();
+					nn_res.push({p, cur_sqrdis});
+				}
+			}
+			return;
+		}
+		auto cur_inte = static_cast<InteNode*>(x.get());
+		auto l_son_sqrdis = FT_INF_MAX, r_son_sqrdis = FT_INF_MAX;
+		if (cur_inte->l_son != nullptr) l_son_sqrdis = point_mbr_sqrdis(query_point, cur_inte->l_son->mbr);
+		if (cur_inte->r_son != nullptr) r_son_sqrdis = point_mbr_sqrdis(query_point, cur_inte->r_son->mbr);
+		if (l_son_sqrdis <= r_son_sqrdis){ // first go left
+			if (nn_res.size() < k || l_son_sqrdis < nn_res.top().second){
+				knn_report_node(cur_inte->l_son, k, query_point, nn_res);
+			}
+			if (nn_res.size() < k || r_son_sqrdis < nn_res.top().second){
+				knn_report_node(cur_inte->r_son, k, query_point, nn_res);
+			}
+		}
+		else{	// first go right
+			if (nn_res.size() < k || r_son_sqrdis < nn_res.top().second){
+				knn_report_node(cur_inte->r_son, k, query_point, nn_res);
+			}
+			if (nn_res.size() < k || l_son_sqrdis < nn_res.top().second){
+				knn_report_node(cur_inte->l_son, k, query_point, nn_res);
+			}
+		}
+		return;
+	}
+
+	auto Tree::knn_report(size_t &k, Point* query_point){
+		priority_queue<nn_pair, vector<nn_pair>, nn_pair_cmp> nn_res;
+		knn_report_node(root, k, query_point, nn_res);
+		return nn_res;
+	}
+	#endif
+
+	auto Tree::knn_report(size_t &k, Point query_point, Bounding_Box &cur_mbr){
+		priority_queue<nn_pair, vector<nn_pair>, nn_pair_cmp> nn_res;
+		knn_report_node(root, k, query_point, cur_mbr, 0.0, 0.0, 32, true, nn_res);
+		return nn_res;
+	}
+
+	template <class T>
+	void Tree::knn_report_node(shared_ptr<BaseNode> &x, size_t &k, Point query_point, Bounding_Box &cur_mbr, FT x_prefix, FT y_prefix, size_t b, bool x_splitter, T &nn_res){
+		if (!x) return;
+		if (x->is_leaf()){
+			auto cur_leaf = static_cast<LeafNode*>(x.get());
+			for (auto &p: cur_leaf->records){
+				auto cur_sqrdis = point_point_sqrdis(p, query_point);
+				if (nn_res.size() < k){
+					nn_res.push({p, cur_sqrdis});
+				}
+				else if (cur_sqrdis < nn_res.top().second){
+					nn_res.pop();
+					nn_res.push({p, cur_sqrdis});
+				}
+			}
+			return;
+		}
+		auto cur_inte = static_cast<InteNode*>(x.get());
+		auto l_son_sqrdis = FT_INF_MAX, r_son_sqrdis = FT_INF_MAX;
+		FT splitter = 1.0 * (1u << (b - 1));
+		auto L_box = cur_mbr, R_box = cur_mbr;
+		if (cur_inte->l_son != nullptr) {
+			if (x_splitter){
+				L_box.second.x = min(x_prefix + splitter - FT_EPS, L_box.second.x);
+			}
+			else{
+				L_box.second.y = min(y_prefix + splitter - FT_EPS, L_box.second.y);
+			}
+			l_son_sqrdis = point_mbr_sqrdis(query_point, L_box);
+		}
+		if (cur_inte->r_son != nullptr) {
+			if (x_splitter){
+				R_box.first.x = max(x_prefix + splitter, R_box.first.x);
+			}
+			else{
+				R_box.first.y = max(y_prefix + splitter, R_box.first.y);
+			}
+			r_son_sqrdis = point_mbr_sqrdis(query_point, R_box);
+		}
+		// auto go_left = [&](){
+		// 	if (nn_res.size() < k || l_son_sqrdis < nn_res.top().second){
+		// 		if (x_splitter) knn_report_node(cur_inte->l_son, k, query_point, L_box, x_prefix, y_prefix, b, !x_splitter, nn_res);
+		// 		else knn_report_node(cur_inte->l_son, k, query_point, L_box, x_prefix, y_prefix, b - 1, !x_splitter, nn_res);
+		// 	}
+		// };
+		// auto go_right = [&](){
+		// 	if (nn_res.size() < k || r_son_sqrdis < nn_res.top().second){
+		// 		if (x_splitter) knn_report_node(cur_inte->r_son, k, query_point, R_box, x_prefix + splitter, y_prefix, b, !x_splitter, nn_res);
+		// 		else knn_report_node(cur_inte->r_son, k, query_point, R_box, x_prefix, y_prefix + splitter, b - 1, !x_splitter, nn_res);
+		// 	}
+		// };
+		if (l_son_sqrdis <= r_son_sqrdis){ // first go left
+			// go_left();
+			// go_right();
+			if (nn_res.size() < k || l_son_sqrdis < nn_res.top().second){
+				if (x_splitter) knn_report_node(cur_inte->l_son, k, query_point, L_box, x_prefix, y_prefix, b, !x_splitter, nn_res);
+				else knn_report_node(cur_inte->l_son, k, query_point, L_box, x_prefix, y_prefix, b - 1, !x_splitter, nn_res);
+			}
+			if (nn_res.size() < k || r_son_sqrdis < nn_res.top().second){
+				if (x_splitter) knn_report_node(cur_inte->r_son, k, query_point, R_box, x_prefix + splitter, y_prefix, b, !x_splitter, nn_res);
+				else knn_report_node(cur_inte->r_son, k, query_point, R_box, x_prefix, y_prefix + splitter, b - 1, !x_splitter, nn_res);
+			}
+		}
+		else{	// first go right
+			// go_right();
+			// go_left();
+			if (nn_res.size() < k || r_son_sqrdis < nn_res.top().second){
+				if (x_splitter) knn_report_node(cur_inte->r_son, k, query_point, R_box, x_prefix + splitter, y_prefix, b, !x_splitter, nn_res);
+				else knn_report_node(cur_inte->r_son, k, query_point, R_box, x_prefix, y_prefix + splitter, b - 1, !x_splitter, nn_res);
+				
+			}
+			if (nn_res.size() < k || l_son_sqrdis < nn_res.top().second){
+				if (x_splitter) knn_report_node(cur_inte->l_son, k, query_point, L_box, x_prefix, y_prefix, b, !x_splitter, nn_res);
+				else knn_report_node(cur_inte->l_son, k, query_point, L_box, x_prefix, y_prefix, b - 1, !x_splitter, nn_res);
+			}
+		}
+		return;
+	}
+
+}
