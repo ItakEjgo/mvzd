@@ -5,6 +5,8 @@
 #include "helper/parse_command_line.h"
 #include "helper/time_loop.h"
 
+#define TEST
+
 using namespace std;
 namespace bg = boost::geometry;
 namespace bgi = boost::geometry::index;
@@ -137,9 +139,13 @@ void spatial_diff_test(PT &P, RQ &range_queries, parlay::sequence<size_t> &batch
 
         cout << fixed << setprecision(6) << "[Boost-Rtree] spatial-diff time (avg): " << avg_time << endl;
 
-        // for (size_t i = 0; i < range_queries.size(); i++){
-        //     cout << addCnt[i] << " " << removeCnt[i] << endl;
-        // }
+        #ifdef TEST
+        string file_name = "output/rtree_spatial_diff-" + to_string(batch_size); 
+        ofstream spatialDiffOut(file_name);
+        for (size_t i = 0; i < range_queries.size(); i++){
+            spatialDiffOut<< addCnt[i] << " " << removeCnt[i] << endl;
+        }
+        #endif
     }
 }
 
@@ -197,9 +203,6 @@ void run(int argc, char** argv){
 		// queries = queries.substr(6148, 1);
         size_t ratio = 5;
         spatial_diff_test(P, queries, batch_sizes, ratio);
-        
-       
-
 	}
 
 }

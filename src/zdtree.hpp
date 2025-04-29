@@ -184,16 +184,26 @@ namespace ZDTree{
 							Bounding_Box &cur_mbr, FT x_prefix, FT y_prefix, size_t b, bool x_splitter);
 
 		// auto diff(shared_ptr<BaseNode> &tree1, shared_ptr<BaseNode> &tree2);
-		
-		auto spatial_diff(shared_ptr<BaseNode> &node1, shared_ptr<BaseNode> &node2, Bounding_Box &query_mbr, Bounding_Box &cur_mbr, FT x_prefix, FT y_prefix, size_t b, bool x_splitter);
-		auto spatial_two_version_diff(shared_ptr<BaseNode> &node1, shared_ptr<BaseNode> &node2, Bounding_Box &query_mbr, Bounding_Box &cur_mbr);
+		template<typename DIFF>
+		auto spatial_diff(shared_ptr<BaseNode> &node1, shared_ptr<BaseNode> &node2, Bounding_Box &query_mbr, Bounding_Box &cur_mbr, 
+							FT x_prefix, FT y_prefix, size_t b, bool x_splitter, DIFF &ret_diff);
+
+		template<typename DIFF>
+		auto spatial_two_version_diff(shared_ptr<BaseNode> &node1, shared_ptr<BaseNode> &node2, Bounding_Box &query_mbr, Bounding_Box &cur_mbr, 
+										DIFF &ret_diff);
 
 		auto diff(shared_ptr<BaseNode> &node1, shared_ptr<BaseNode> &node2, size_t b);
 		auto leaf_leaf_diff(shared_ptr<BaseNode> &leaf1, shared_ptr<BaseNode> &leaf2);
-		auto leaf_leaf_diff(shared_ptr<BaseNode> &leaf1, shared_ptr<BaseNode> &leaf2, Bounding_Box &query_mbr);
+
+		template<typename DIFF>
+		auto leaf_leaf_diff(shared_ptr<BaseNode> &leaf1, shared_ptr<BaseNode> &leaf2, Bounding_Box &query_mbr, DIFF &ret_diff);
+
 		auto leaf_inte_diff(sequence<Point> &P, size_t l, size_t r, shared_ptr<BaseNode> &inte, size_t b);
-		auto leaf_inte_diff(sequence<Point> &P, size_t l, size_t r, shared_ptr<BaseNode> &x,
-								Bounding_Box &query_mbr, Bounding_Box &cur_mbr, FT x_prefix, FT y_prefix, size_t b, bool x_splitter);
+
+		template<typename DIFF>
+		auto leaf_inte_diff(sequence<Point> &P, size_t l, size_t r, shared_ptr<BaseNode> &x, Bounding_Box &query_mbr, Bounding_Box &cur_mbr,
+							 FT x_prefix, FT y_prefix, size_t b, bool x_splitter, DIFF &ret_diff, bool reverse = false);
+
 		auto two_version_diff(shared_ptr<BaseNode> &node1, shared_ptr<BaseNode> &node2);
 
 		//	commit, based on op do multi-version insertion, deletion, and update
@@ -337,37 +347,14 @@ namespace ZDTree{
 		return new_ver;
 	}
 
-
-	auto Tree::leaf_leaf_diff(shared_ptr<BaseNode> &leaf1, shared_ptr<BaseNode> &leaf2, Bounding_Box &query_mbr){
-		// sequence<Point> add = {}, remove = {};
+	template<typename DIFF>
+	auto Tree::leaf_leaf_diff(shared_ptr<BaseNode> &leaf1, shared_ptr<BaseNode> &leaf2, Bounding_Box &query_mbr, DIFF &ret_diff){
 		auto cur_leaf1 = static_cast<LeafNode*>(leaf1.get());
 		auto cur_leaf2 = static_cast<LeafNode*>(leaf2.get());
-
-		// auto not_in_leaf2 = [&](auto pt){
-		// 	if (!point_in_mbr(pt, query_mbr)) return false;	//	not in query MBR
-		// 	for (size_t i = 0; i < cur_leaf2->records.size(); i++){
-		// 		if (pt.id == cur_leaf2->records[i].id && pt == cur_leaf2->records[i]) return false;
-		// 	}
-		// 	return true;
-		// };
-		// remove = parlay::filter(cur_leaf1->records, not_in_leaf2);
 		auto f = [&](auto pt){
 			return point_in_mbr(pt, query_mbr);
 		};
-		// remove = get_delete_p(cur_leaf1->records, cur_leaf2->records, 0, cur_leaf2->get_num_points(), f);
-		// add = get_delete_p(cur_leaf2->records, cur_leaf1->records, 0, cur_leaf1->get_num_points(), f);
-		
-		// auto not_in_leaf1 = [&](auto pt){
-		// 	if (!point_in_mbr(pt, query_mbr)) return false; //	not in query MBR
-		// 	for (size_t i = 0; i < cur_leaf1->records.size(); i++){
-		// 		if (pt.id == cur_leaf1->records[i].id && pt == cur_leaf1->records[i]) return false;
-		// 	}
-		// 	return true;
-		// };
-		// add = parlay::filter(cur_leaf2->records, not_in_leaf1);
-
-		// return make_tuple(add, remove);	
-		return geobase::merge_pts(cur_leaf1->records, cur_leaf2->records, f);
+		return geobase::merge_pts(cur_leaf1->records, cur_leaf2->records, f, ret_diff);
 	}
 
 	auto Tree::leaf_leaf_diff(shared_ptr<BaseNode> &leaf1, shared_ptr<BaseNode> &leaf2){
@@ -376,24 +363,6 @@ namespace ZDTree{
 		auto cur_leaf1 = static_cast<LeafNode*>(leaf1.get());
 		auto cur_leaf2 = static_cast<LeafNode*>(leaf2.get());
 
-		// auto not_in_leaf2 = [&](auto pt){
-		// 	for (size_t i = 0; i < cur_leaf2->records.size(); i++){
-		// 		if (pt.id == cur_leaf2->records[i].id && pt == cur_leaf2->records[i] ) return false;
-		// 	}
-		// 	return true;
-		// };
-		// auto remove_bk = parlay::filter(cur_leaf1->records, not_in_leaf2);
-		// remove = get_delete_p(cur_leaf1->records, cur_leaf2->records, 0, cur_leaf2->get_num_points());
-		// add = get_delete_p(cur_leaf2->records, cur_leaf1->records, 0, cur_leaf1->get_num_points());
-
-		// auto not_in_leaf1 = [&](auto pt){
-		// 	for (size_t i = 0; i < cur_leaf1->records.size(); i++){
-		// 		if (pt.id == cur_leaf1->records[i].id && pt == cur_leaf1->records[i]) return false;
-		// 	}
-		// 	return true;
-		// };
-		// auto add_bk = parlay::filter(cur_leaf2->records, not_in_leaf1);
-		// return make_tuple(add, remove);	
 		return merge_pts(cur_leaf1->records, cur_leaf2->records);
 	}
 
@@ -407,69 +376,7 @@ namespace ZDTree{
 		if (x->is_leaf()){	//	Base case when we meet two leaf nodes
 			auto cur_leaf = static_cast<LeafNode*>(x.get());
 			auto lhs_records = parlay::make_slice(&P[l], &P[r]);
-
-			// auto tmp_records = parlay::sequence<Point>::uninitialized(32);
-			// if (r - l > 32) tmp_records.resize(r - l);
-			// size_t cur = 0;
-			// for (size_t i = l; i < r; i++){
-			// 	parlay::assign_uninitialized(tmp_records[cur++], P[i]);
-			// }
-			// tmp_records.resize(cur);
 			return merge_pts(lhs_records, cur_leaf->records);
-
-			// remove = get_delete_p(tmp_records, cur_leaf->records, 0, cur_leaf->get_num_points());
-			// add = get_delete_p(cur_leaf->records, P, l, r);
-
-			// parlay::sequence<Point> remove_bk = {};
-			// for (size_t i = l; i < r; i++){	// in P[l..r] but not in the leaf
-			// 	bool flag = true; 
-			// 	for (size_t j = 0; j < cur_leaf->records.size(); j++){
-			// 		if (P[i].id == cur_leaf->records[j].id && P[i] == cur_leaf->records[j]){
-			// 			flag = false;
-			// 			break;
-			// 		}
-			// 	}
-			// 	if (flag) remove_bk.emplace_back(P[i]);
-			// }
-			// if (remove_bk != remove){
-			// 	cout << "ERROR, not equal remove" << endl;
-			// 	cout << "leaf record size: " << cur_leaf->records.size() << endl;
-			// 	cout << "r - l size: " << r - l << endl;
-			// 	cout << "remove: " << endl;
-			// 	for (auto &pt: remove){
-			// 		cout << pt.morton_id << "," << pt.id << endl; 
-			// 	}
-			// 	cout << "remove_bk: " << endl;
-			// 	for (auto &pt: remove_bk){
-			// 		cout << pt.morton_id << "," << pt.id << endl; 
-			// 	}
-			// 	int tt; cin >> tt;
-			// }
-			// parlay::sequence<Point> add_bk = {};
-			// for (size_t j = 0; j < cur_leaf->records.size(); j++){	// in the leaf but not in P[l..r]
-			// 	bool flag = true; 
-			// 	for (size_t i = l; i < r; i++){	
-			// 		if (P[i].id == cur_leaf->records[j].id && P[i] == cur_leaf->records[j]){
-			// 			flag = false;
-			// 			break;
-			// 		}
-			// 	}
-			// 	if (flag) add_bk.emplace_back(cur_leaf->records[j]);
-			// }
-
-			// if (add_bk != add){
-			// 	cout << "ERROR, not equal add" << endl;
-			// 	cout << "add: " << endl;
-			// 	for (auto &pt: add){
-			// 		cout << pt.morton_id << "," << pt.id << endl; 
-			// 	}
-			// 	cout << "add_bk: " << endl;
-			// 	for (auto &pt: add_bk){
-			// 		cout << pt.morton_id << "," << pt.id << endl; 
-			// 	}
-			// 	int tt; cin >> tt;
-			// }
-			// return make_tuple(add, remove);
 		}
 		//	divide into two subcases
 		auto splitter = split_by_bit(P, l, r, b);
@@ -478,23 +385,21 @@ namespace ZDTree{
 
 		auto diff_left = [&](){ tie(L_add, L_remove) = leaf_inte_diff(P, l, splitter, cur_inte->l_son, b - 1); };
 		auto diff_right = [&](){ tie(R_add, R_remove) = leaf_inte_diff(P, splitter, r, cur_inte->r_son, b - 1); };
-		par_do_if(r - l + x->get_num_points() >= granularity_cutoff,
-			diff_left,
-			diff_right);
+
+		diff_left();
+		diff_right();
 		L_add.append(R_add);
 		L_remove.append(R_remove);
+
 		return make_tuple(L_add, L_remove);
 	}
 
-	auto Tree::leaf_inte_diff(sequence<Point> &P, size_t l, size_t r, shared_ptr<BaseNode> &x,
-								Bounding_Box &query_mbr, Bounding_Box &cur_mbr, FT x_prefix, FT y_prefix, size_t b, bool x_splitter){
+	template<typename DIFF>
+	auto Tree::leaf_inte_diff(sequence<Point> &P, size_t l, size_t r, shared_ptr<BaseNode> &x, Bounding_Box &query_mbr, Bounding_Box &cur_mbr, 
+								FT x_prefix, FT y_prefix, size_t b, bool x_splitter, DIFF &ret_diff, bool reverse){
 		auto flag = mbr_mbr_relation(cur_mbr, query_mbr);
 		if (flag < 0) {
-			sequence<Point> add = {}, remove = {};
-			return make_tuple(add ,remove);	//	no intersection
-		}
-		if (flag > 0){	// fully contained, call leaf_inte_diff 
-			return leaf_inte_diff(P, l, r, x, b);
+			return;	//	no intersection
 		}
 
 		auto f = [&](auto x){	//	filter a sequence of points in the query mbr
@@ -503,89 +408,36 @@ namespace ZDTree{
 
 		// intersected, need further recursive processing
 		if (!x){	//	inte could be nullptr if only one branch exists
-			sequence<Point> add = {};
-			auto remove = parlay::sequence<Point>::uninitialized(r - l);
-			size_t cnt = 0;
 			for (size_t i = l; i < r; i++){
 				if (f(P[i])){
-					parlay::assign_uninitialized(remove[cnt++], P[i]);
+					ret_diff.remove_point(P[i], reverse);
+					// parlay::assign_uninitialized(ret_diff.remove[ret_diff.remove_cnt++], P[i]);
 				}
 			}
-			remove.resize(cnt);
-			// auto remove = parlay::filter(P.substr(l, r - l), f);
-			return make_tuple(add, remove);
+			return;
 		}
 
 		if (x->is_leaf()){	//	Base case when we meet two leaf nodes
 			auto cur_leaf = static_cast<LeafNode*>(x.get());
 			auto lhs_records = parlay::make_slice(&P[l], &P[r]);
-			// for (size_t i = l; i < r; i++){	// in P[l..r] but not in the leaf
-			// 	bool flag = true; 
-			// 	for (size_t j = 0; j < cur_leaf->records.size(); j++){
-			// 		if (P[i].id == cur_leaf->records[j].id && P[i] == cur_leaf->records[j]){
-			// 			flag = false;
-			// 			break;
-			// 		}
-			// 	}
-			// 	// if (!point_in_mbr(P[i], query_mbr)) flag = false;
-			// 	if (flag && f(P[i])) remove.emplace_back(P[i]);
-			// }
-			// auto tmp_records = parlay::sequence<Point>::uninitialized(32);
-			// if (r - l > 32) tmp_records.resize(r - l);
-			// size_t cur = 0;
-			// for (size_t i = l; i < r; i++){
-			// 	parlay::assign_uninitialized(tmp_records[cur++], P[i]);
-			// }
-			// tmp_records.resize(cur);
-			return merge_pts(lhs_records, cur_leaf->records, f);
-			// remove = get_delete_p(tmp_records, cur_leaf->records, 0, cur_leaf->get_num_points(), f);
-			// add = get_delete_p(cur_leaf->records, P, l, r, f);
-
-			// for (size_t j = 0; j < cur_leaf->records.size(); j++){	// in the leaf but not in P[l..r]
-			// 	bool flag = true; 
-			// 	for (size_t i = l; i < r; i++){	
-			// 		if (P[i].id == cur_leaf->records[j].id && P[i] == cur_leaf->records[j]){
-			// 			flag = false;
-			// 			break;
-			// 		}
-			// 	}
-			// 	// if (!point_in_mbr(cur_leaf->records[j], query_mbr)) flag = false;
-			// 	if (flag && f(cur_leaf->records[j])) add.emplace_back(cur_leaf->records[j]);
-			// }
-			// return make_tuple(add, remove);
+			return merge_pts(lhs_records, cur_leaf->records, f, ret_diff, reverse);
 		}
 		//	divide into two subcases
 		auto splitter = split_by_bit(P, l, r, b);
 		auto cur_inte = static_cast<InteNode*>(x.get());
 
 		auto [L_box, R_box, rx_prefix, ry_prefix] = compute_cur_box(cur_mbr, x_prefix, y_prefix, b, x_splitter);
-		// size_t shift_b = (b + 1) / 2;
-		// FT split_value = 1.0 * (1u << (shift_b - 1));
 
-		
-		// auto L_box = cur_mbr;
-		// auto R_box = cur_mbr;
-		// auto rx_prefix = x_prefix;
-		// auto ry_prefix = y_prefix;
-		// if (x_splitter){
-		// 	L_box.second.x = min(x_prefix + split_value - FT_EPS, L_box.second.x);
-		// 	R_box.first.x = max(x_prefix + split_value, R_box.first.x);
-		// 	rx_prefix += split_value;
-		// }
-		// else{
-		// 	L_box.second.y = min(y_prefix + split_value - FT_EPS, L_box.second.y);
-		// 	R_box.first.y = max(y_prefix + split_value, R_box.first.y);
-		// 	ry_prefix += split_value;
-		// }
 		sequence<Point> L_add, L_remove, R_add, R_remove;
-		auto diff_left = [&](){ tie(L_add, L_remove) = leaf_inte_diff(P, l, splitter, cur_inte->l_son, query_mbr, L_box, x_prefix, y_prefix, b - 1, !x_splitter); };
-		auto diff_right = [&](){ tie(R_add, R_remove) = leaf_inte_diff(P, splitter, r, cur_inte->r_son, query_mbr, R_box, rx_prefix, ry_prefix,  b - 1, !x_splitter); };
-		par_do_if(r - l + x->get_num_points() >= granularity_cutoff,
-			diff_left,
-			diff_right);
-		L_add.append(R_add);
-		L_remove.append(R_remove);
-		return make_tuple(L_add, L_remove);
+		leaf_inte_diff(P, l, splitter, cur_inte->l_son, query_mbr, L_box, x_prefix, y_prefix, b - 1, !x_splitter, ret_diff, reverse);
+		leaf_inte_diff(P, splitter, r, cur_inte->r_son, query_mbr, R_box, rx_prefix, ry_prefix,  b - 1, !x_splitter, ret_diff, reverse);
+		// auto diff_left = [&](){ tie(L_add, L_remove) = leaf_inte_diff(P, l, splitter, cur_inte->l_son, query_mbr, L_box, x_prefix, y_prefix, b - 1, !x_splitter, ret_diff); };
+		// auto diff_right = [&](){ tie(R_add, R_remove) = leaf_inte_diff(P, splitter, r, cur_inte->r_son, query_mbr, R_box, rx_prefix, ry_prefix,  b - 1, !x_splitter, ret_diff); };
+		// diff_left();
+		// diff_right();
+		// L_add.append(R_add);
+		// L_remove.append(R_remove);
+		return;
 	}
 
 	auto Tree::diff(shared_ptr<BaseNode> &node1, shared_ptr<BaseNode> &node2, size_t b){
@@ -641,86 +493,81 @@ namespace ZDTree{
 		return make_tuple(L_add, L_remove);
 	}
 
-
-	
-	auto Tree::spatial_diff(shared_ptr<BaseNode> &node1, shared_ptr<BaseNode> &node2, Bounding_Box &query_mbr, Bounding_Box &cur_mbr, FT x_prefix, FT y_prefix, size_t b, bool x_splitter){
+	template<typename DIFF>
+	auto Tree::spatial_diff(shared_ptr<BaseNode> &node1, shared_ptr<BaseNode> &node2, Bounding_Box &query_mbr, Bounding_Box &cur_mbr, 
+							FT x_prefix, FT y_prefix, size_t b, bool x_splitter, DIFF &ret_diff){
 		auto flag = mbr_mbr_relation(cur_mbr, query_mbr);
 		if (flag < 0){	// no intersection with the query region, skip
-			sequence<Point> add = {}, remove = {};
-			return make_tuple(add, remove);
+			return;
 		}
-
-		// if (flag > 0){	//	case fully contained, just return everything in diff
-		// 	return diff(node1, node2, b);
-		// }
 
 		//	case overlapped, need to handle multiple cases
 		/* Case 0: no difference */
 		if (node1 == node2){
 			// cout << "go to 0" << endl;
-			sequence<Point> add = {}, remove = {};
-			return make_tuple(add, remove);
+			return;
 		}
 		/* Case 1: node1 is empty, add all points from node2 */
 		if (!node1){
 			// cout << "go to 11" << endl;
-			// auto add = parlay::sequence<Point>::uninitialized(2 * node2->get_num_points());
-			// size_t cnt = 0;
-			sequence<Point> remove = {};
-			// range_report_node(node2, query_mbr, cur_mbr, x_prefix, y_prefix, b, x_splitter, cnt, add);
-			// add.resize(cnt);
-			auto add = collect_records(node2, query_mbr, cur_mbr, x_prefix, y_prefix, b, x_splitter);
-			return make_tuple(add, remove);
+			range_report_node(node2, query_mbr, cur_mbr, x_prefix, y_prefix, b, x_splitter, ret_diff.add_cnt, ret_diff.add);
+			// auto add = collect_records(node2, query_mbr, cur_mbr, x_prefix, y_prefix, b, x_splitter);
+			return;
 		}
 		/* Case 1: node2 is empty, remove all points from node1 */
 		if (!node2){
 			// cout << "go to 12" << endl;
-			// auto remove = parlay::sequence<Point>::uninitialized(2 * node1->get_num_points());
+			// auto remove = parlay::sequence<Point>::uninitialized(node1->get_num_points());
 			// size_t cnt = 0;
-			sequence<Point> add = {};
-			// range_report_node(node1, query_mbr, cur_mbr, x_prefix, y_prefix, b, x_splitter, cnt, remove);
-			// remove.resize(cnt);
-			auto remove = collect_records(node1, query_mbr, cur_mbr, x_prefix, y_prefix, b, x_splitter);
-			return make_tuple(add, remove);
+			range_report_node(node1, query_mbr, cur_mbr, x_prefix, y_prefix, b, x_splitter, ret_diff.remove_cnt, ret_diff.remove);
+			// auto remove = collect_records(node1, query_mbr, cur_mbr, x_prefix, y_prefix, b, x_splitter);
+			// return make_tuple(add, remove);
+			return;
 		}
 		/* Case 2: two leaf nodes, need to scan both */
 		if (node1->is_leaf() && node2->is_leaf()){
 			// cout << "go to 21" << endl;
-			auto [add, remove] = leaf_leaf_diff(node1, node2, query_mbr);
-			return make_tuple(add, remove);	
+			leaf_leaf_diff(node1, node2, query_mbr, ret_diff);
+			// return make_tuple(add, remove);	
+			return;	
 		}
 		/* Case 3: one of the nodes is leaf */
 		if (node1->is_leaf() && !node2->is_leaf()){
 			// cout << "go to 31" << endl;
 			auto P = static_cast<LeafNode*>(node1.get())->records;
-			auto [add, remove] = leaf_inte_diff(P, 0, P.size(), node2, query_mbr, cur_mbr, x_prefix, y_prefix, b, x_splitter);
-			return make_tuple(add, remove);
+			leaf_inte_diff(P, 0, P.size(), node2, query_mbr, cur_mbr, x_prefix, y_prefix, b, x_splitter, ret_diff);
+			// return make_tuple(add, remove);
+			return;
 		}
 		/* Case 3: the other possibility */
 		if (!node1->is_leaf() && node2->is_leaf()){
 			// cout << "go to 32" << endl;
 			auto P = static_cast<LeafNode*>(node2.get())->records;
-			auto [remove, add] = leaf_inte_diff(P, 0, P.size(), node1, query_mbr, cur_mbr, x_prefix, y_prefix, b, x_splitter);
-			return make_tuple(add, remove);
+			leaf_inte_diff(P, 0, P.size(), node1, query_mbr, cur_mbr, x_prefix, y_prefix, b, x_splitter, ret_diff, true);
+			// return make_tuple(add, remove);
+			return;
 		}
 		/* Case 4: two interior nodes, not fully overlapped */
 		auto cur_inte1 = static_cast<InteNode*>(node1.get());
 		auto cur_inte2 = static_cast<InteNode*>(node2.get());
 
 		auto [L_box, R_box, rx_prefix, ry_prefix] = compute_cur_box(cur_mbr, x_prefix, y_prefix, b, x_splitter);
+		spatial_diff(cur_inte1->l_son, cur_inte2->l_son, query_mbr, L_box, x_prefix, y_prefix, b - 1, !x_splitter, ret_diff);
+		spatial_diff(cur_inte1->r_son, cur_inte2->r_son, query_mbr, R_box, rx_prefix, ry_prefix, b - 1, !x_splitter, ret_diff);
 
-		sequence<Point> L_add, L_remove, R_add, R_remove;
-		auto diff_left = [&](){ tie(L_add, L_remove) = spatial_diff(cur_inte1->l_son, cur_inte2->l_son, query_mbr, L_box, x_prefix, y_prefix, b - 1, !x_splitter); };
-		auto diff_right = [&](){ tie(R_add, R_remove) = spatial_diff(cur_inte1->r_son, cur_inte2->r_son, query_mbr, R_box, rx_prefix, ry_prefix, b - 1, !x_splitter); };
-		diff_left();
-		diff_right();
+		// sequence<Point> L_add, L_remove, R_add, R_remove;
+		// auto diff_left = [&](){ tie(L_add, L_remove) = spatial_diff(cur_inte1->l_son, cur_inte2->l_son, query_mbr, L_box, x_prefix, y_prefix, b - 1, !x_splitter, ret_diff); };
+		// auto diff_right = [&](){ tie(R_add, R_remove) = spatial_diff(cur_inte1->r_son, cur_inte2->r_son, query_mbr, R_box, rx_prefix, ry_prefix, b - 1, !x_splitter, ret_diff); };
+		// diff_left();
+		// diff_right();
 		// par_do_if(node1->get_num_points() + node2->get_num_points() >= granularity_cutoff, 
 		// 	diff_left,
 		// 	diff_right);
-		L_add.append(R_add);
-		L_remove.append(R_remove);
+		// L_add.append(R_add);
+		// L_remove.append(R_remove);
 
-		return make_tuple(L_add, L_remove);
+		// return make_tuple(L_add, L_remove);
+		return;
 	}
 
 	auto Tree::two_version_diff(shared_ptr<BaseNode> &node1, shared_ptr<BaseNode> &node2){
@@ -729,9 +576,10 @@ namespace ZDTree{
 		auto [add, remove] = diff(node1, node2, 64);
 		return make_tuple(add, remove);
 	}
-
-	auto Tree::spatial_two_version_diff(shared_ptr<BaseNode> &node1, shared_ptr<BaseNode> &node2, Bounding_Box &query_mbr, Bounding_Box &cur_mbr){
-		return spatial_diff(node1, node2, query_mbr, cur_mbr, 0.0, 0.0, 64, true);
+	
+	template<typename DIFF>
+	auto Tree::spatial_two_version_diff(shared_ptr<BaseNode> &node1, shared_ptr<BaseNode> &node2, Bounding_Box &query_mbr, Bounding_Box &cur_mbr, DIFF &ret_diff){
+		return spatial_diff(node1, node2, query_mbr, cur_mbr, 0.0, 0.0, 64, true, ret_diff);
 	}
 
 	//	current return conflict only

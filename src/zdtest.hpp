@@ -59,11 +59,15 @@ namespace CPAMBB{
 				[&](){
 					for (size_t i = 0; i < range_queries.size(); i++){
 						// print_mbr(range_queries[i]);
-						auto [add, remove] = CPAMBB::plain_map_spatial_diff(cpambb0, cpambb1, range_queries[i]);
-						// print_Pset_info(add, "add");
-						// print_Pset_info(remove, "remove");
-						addCnt[i] = add.size();
-						removeCnt[i] = remove.size();
+						diff_type ret_diff(maxSize, maxSize);
+						auto l_pts = parlay::sequence<Point>::uninitialized(2 * maxSize);
+						auto r_pts = parlay::sequence<Point>::uninitialized(2 * maxSize);
+						CPAMBB::plain_map_spatial_diff(cpambb0, cpambb1, range_queries[i], ret_diff, l_pts, r_pts);
+						ret_diff.compact();
+						// print_Pset_info(ret_diff.add, "add");
+						// print_Pset_info(ret_diff.remove, "remove");
+						addCnt[i] = ret_diff.add.size();
+						removeCnt[i] = ret_diff.remove.size();
 					}
 				},
 				[&]{}
@@ -108,9 +112,13 @@ namespace CPAMBB{
             	[&](){},
             	[&](){
                 	for (size_t i = 0; i < range_queries.size(); i++){
-						auto [add, remove] = CPAMBB::map_spatial_diff(cpambb0, cpambb2, range_queries[i]);
-						addCnt[i] = add.size();
-						removeCnt[i] = remove.size();
+						diff_type ret_diff(maxSize, maxSize);
+						auto l_pts = parlay::sequence<Point>::uninitialized(2 * maxSize);
+						auto r_pts = parlay::sequence<Point>::uninitialized(2 * maxSize);
+						CPAMBB::plain_map_spatial_diff(cpambb0, cpambb2, range_queries[i], ret_diff, l_pts, r_pts);
+						ret_diff.compact();
+						addCnt[i] = ret_diff.add.size();
+						removeCnt[i] = ret_diff.remove.size();
                 	}
             	},
             	[&]{}
@@ -158,9 +166,11 @@ namespace CPAMBB{
 				3, 1.0, [&]() {},
 				[&]() {
 					parlay::parallel_for(0, range_queries.size(), [&](int i){
-						auto [add, remove] = CPAMBB::map_spatial_diff(cpambb0, cpambb2, range_queries[i]);
-						addCnt[i] = add.size();
-						removeCnt[i] = remove.size();
+						diff_type ret_diff(maxSize, maxSize);
+						CPAMBB::map_spatial_diff(cpambb0, cpambb2, range_queries[i], ret_diff);
+						ret_diff.compact();
+						addCnt[i] = ret_diff.add.size();
+						removeCnt[i] = ret_diff.remove.size();
 					});
 				},
 			[&](){} );
@@ -197,9 +207,11 @@ namespace CPAMBB{
 				3, 1.0, [&]() {},
 				[&]() {
 					parlay::parallel_for(0, range_queries.size(), [&](int i){
-						auto [add, remove] = CPAMBB::map_spatial_diff(cpambb0, cpambb2, range_queries[i]);
-						addCnt[i] = add.size();
-						removeCnt[i] = remove.size();
+						diff_type ret_diff(maxSize, maxSize);
+						CPAMBB::map_spatial_diff(cpambb0, cpambb2, range_queries[i], ret_diff);
+						ret_diff.compact();
+						addCnt[i] = ret_diff.add.size();
+						removeCnt[i] = ret_diff.remove.size();
 					});
 				},
 			[&](){} );
@@ -1298,16 +1310,20 @@ namespace ZDTest{
 							pts2.resize(cnt2);
 							// print_Pset_info(pts1, "pts1");
 							// print_Pset_info(pts2, "pts2");
-							auto[add, remove] = merge_pts(pts1, pts2);
+							diff_type ret_diff(maxSize, maxSize);
+							merge_pts(pts1, pts2, ret_diff);
 							// print_Pset_info(add, "add");
 							// print_Pset_info(remove, "remove");
-							addCnt[i] = add.size();
-							removeCnt[i] = remove.size();
+							ret_diff.compact();
+							addCnt[i] = ret_diff.add.size();
+							removeCnt[i] = ret_diff.remove.size();
 						}
 						else{
-							auto [add, remove] = zdtree.spatial_two_version_diff(zdtree.root, newtree.root, range_queries[i], largest_mbr);
-							addCnt[i] = add.size();
-							removeCnt[i] = remove.size();
+							diff_type ret_diff(maxSize, maxSize);
+							zdtree.spatial_two_version_diff(zdtree.root, newtree.root, range_queries[i], largest_mbr, ret_diff);
+							ret_diff.compact();
+							addCnt[i] = ret_diff.add.size();
+							removeCnt[i] = ret_diff.remove.size();
 						}
 					}
 				},
@@ -1372,11 +1388,15 @@ namespace ZDTest{
 					for (size_t i = 0; i < range_queries.size(); i++){
 						// cout << "processing: " << i << endl;
 						// print_mbr(range_queries[i]);
-						auto[add, remove] = zdtree.spatial_two_version_diff(zdtree.root, new_ver2, range_queries[i], largest_mbr);
-						// print_Pset_info(add, "add");
-						// print_Pset_info(remove, "remove");
-						addCnt[i] = add.size();
-						removeCnt[i] = remove.size();
+						diff_type ret_diff(maxSize, maxSize);
+						// auto[add, remove] = zdtree.spatial_two_version_diff(zdtree.root, new_ver2, range_queries[i], largest_mbr);
+						zdtree.spatial_two_version_diff(zdtree.root, new_ver2, range_queries[i], largest_mbr, ret_diff);
+						ret_diff.add.resize(ret_diff.add_cnt);
+						ret_diff.remove.resize(ret_diff.remove_cnt);
+						// print_Pset_info(ret_diff.add, "add");
+						// print_Pset_info(ret_diff.remove, "remove");
+						addCnt[i] = ret_diff.add.size();
+						removeCnt[i] = ret_diff.remove.size();
 					}
 				},
 				[&]{}
@@ -1432,9 +1452,10 @@ namespace ZDTest{
 		    	3, 1.0, [&]() {},
 		    	[&]() {
 					parlay::parallel_for(0, range_queries.size(), [&](int i){
-						auto[add, remove] = zdtree.spatial_two_version_diff(zdtree.root, new_ver2, range_queries[i], largest_mbr);
-						addCnt[i] = add.size();
-						removeCnt[i] = remove.size();
+						diff_type ret_diff(maxSize, maxSize);
+						zdtree.spatial_two_version_diff(zdtree.root, new_ver2, range_queries[i], largest_mbr, ret_diff);
+						addCnt[i] = ret_diff.add.size();
+						removeCnt[i] = ret_diff.remove.size();
 					});
 		    	},
 	    		[&](){} 
@@ -1481,9 +1502,10 @@ namespace ZDTest{
 		    	3, 1.0, [&]() {},
 		    	[&]() {
 					parlay::parallel_for(0, range_queries.size(), [&](int i){
-						auto[add, remove] = zdtree.spatial_two_version_diff(zdtree.root, new_ver2, range_queries[i], largest_mbr);
-						addCnt[i] = add.size();
-						removeCnt[i] = remove.size();
+						diff_type ret_diff(maxSize, maxSize);
+						zdtree.spatial_two_version_diff(zdtree.root, new_ver2, range_queries[i], largest_mbr, ret_diff);
+						addCnt[i] = ret_diff.add.size();
+						removeCnt[i] = ret_diff.remove.size();
 					});
 		    	},
 	    		[&](){} 

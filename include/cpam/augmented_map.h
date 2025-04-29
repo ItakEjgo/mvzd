@@ -34,7 +34,7 @@ public:
 
   template<class Fpt, class Fbb>
   static M aug_filter2(M m, const Fpt& f, const Fbb &fbb) {
-    return M(Tree::aug_filter2(m.get_root(), f));    
+    return M(Tree::aug_filter2(m.get_root(), f, fbb));    
   }
   
   // template<class F>

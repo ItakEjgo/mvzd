@@ -424,21 +424,23 @@ void run(int argc, char** argv){
         size_t ratio = 5;
 		// queries = queries.substr(0, 50000);
 		// queries = queries.substr(15, 1);
+		// queries = queries.substr(109, 1);
+		// queries = queries.substr(49999, 1);
 
 		parlay::sequence<size_t> batch_sizes = {
-            // 10000
-            // 20000,
-            // 50000,
-            // 100000,
-            // 200000,
-            // 500000,
-            // 1000000,
-            // 2000000,
-            // 5000000,
-            10000000
-            // 20000000, 
-            // 50000000,
-            // 100000000
+            10000,
+            20000,
+            50000,
+            100000,
+            200000,
+            500000,
+            1000000,
+            2000000,
+            5000000,
+            10000000,
+            20000000, 
+            50000000,
+            100000000
         };
         parlay::sequence<size_t> ratios = {1, 2, 3, 4, 5, 6, 7, 8, 9};
 		// queries = queries.substr(660, 1);
@@ -446,14 +448,14 @@ void run(int argc, char** argv){
         cout << "[INFO]: Exp for Batch Size" << endl;
 		ZDTest::spatial_diff_test_latency(P, queries, batch_sizes, ratio);
 		// CPAMZ::spatial_diff_test_latency(P, queries, batch_sizes, ratio);
-		// CPAMBB::spatial_diff_test_latency(P, queries, batch_sizes, ratio);
+		CPAMBB::spatial_diff_test_latency(P, queries, batch_sizes, ratio);
 		
 		line_splitter();
 
 		ZDTest::plain_spatial_diff_test_latency(P, queries, batch_sizes, ratio);
-		// ZDTest::plain_spatial_diff_test_latency(P, queries, batch_sizes, ratio, true);
+		ZDTest::plain_spatial_diff_test_latency(P, queries, batch_sizes, ratio, true);
 		// CPAMZ::plain_spatial_diff_test_latency(P, queries, batch_sizes, ratio);
-		// CPAMBB::plain_spatial_diff_test_latency(P, queries, batch_sizes, ratio);
+		CPAMBB::plain_spatial_diff_test_latency(P, queries, batch_sizes, ratio);
 
         // for (auto &batch_size: batch_sizes){
         //     if (batch_size > P.size()) break;
@@ -461,7 +463,7 @@ void run(int argc, char** argv){
 		// 	cout << "[INFO] Proposed Solutions:" << endl;
 		// 	ZDTest::spatial_diff_test_latency(P, queries, batch_size, ratio);
         // 	CPAMZ::spatial_diff_test_latency(P, queries, batch_size, ratio);
-		// 	CPAMBB::spatial_diff_test_latency(P, queries, batch_size, ratio);
+			// CPAMBB::spatial_diff_test_latency(P, queries, batch_size, ratio);
 			
 		// 	cout << "[INFO] Plain Solutions:" << endl;
 

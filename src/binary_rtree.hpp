@@ -37,7 +37,7 @@ namespace CPAMBB{
 	};
 
 	// using zmap = cpam::aug_map<entry, 32>;
-	using zmap = cpam::aug_map<entry, 16>;
+	using zmap = cpam::aug_map<entry, 32>;
 	using par = std::tuple<entry::key_t, entry::val_t>;
 
 	template<class T, class MBR>
@@ -58,28 +58,19 @@ namespace CPAMBB{
 		};
 
 		// return zmap::aug_filter(tree, fbb);
-		return  zmap::filter(zmap::aug_filter(tree, fbb), fpt);
+		// return  zmap::filter(zmap::aug_filter(tree, fbb), fpt);
+		return zmap::aug_filter2(tree, fpt, fbb);
 	}
 
-
-	template<typename M>
-	auto plain_map_spatial_diff(M &lhs, M &rhs, Bounding_Box &query){
-		auto l_pts = zmap::values(filter_range(lhs, query));
-		auto r_pts = zmap::values(filter_range(rhs, query));
-		// cout << "debug: " << l_pts.size() << ", " << r_pts.size() << endl;
-		auto [add, remove] = merge_pts(l_pts, r_pts);
-		// geobase::print_Pset_info(add, "add");
-		// geobase::print_Pset_info(remove, "remove");
-		return make_tuple(add, remove);
-	}
-
-	template<typename M>
-	auto map_spatial_diff(M &lhs, M &rhs, Bounding_Box &query){
+	template<typename M, typename DIFF>
+	auto map_spatial_diff(M &lhs, M &rhs, Bounding_Box &query, DIFF &ret_diff){
 		auto filtered_lhs = filter_range(lhs, query);
 		auto filtered_rhs = filter_range(rhs, query);
-		auto add = zmap::values(zmap::map_difference(filtered_rhs, filtered_lhs));
-		auto remove = zmap::values(zmap::map_difference(filtered_lhs, filtered_rhs));
-		return make_tuple(add, remove);
+		ret_diff.add = zmap::values(zmap::map_difference(filtered_rhs, filtered_lhs));
+		ret_diff.add_cnt = ret_diff.add.size();
+		ret_diff.remove = zmap::values(zmap::map_difference(filtered_lhs, filtered_rhs));
+		ret_diff.remove_cnt = ret_diff.remove.size();
+		return;
 	}
 
 	template<typename M>
@@ -96,7 +87,7 @@ namespace CPAMBB{
 		parlay::parallel_for(0, n, [&](int i){
 			P[i].morton_id = use_hilbert ? P[i].overlap_bits() : P[i].interleave_bits();
 		});
-
+		// auto P_set = get_sorted_points(P);
 		parlay::sequence<par> entries(n);
 		parlay::parallel_for(0, n, [&](int i){
 			entries[i] = {{P[i].morton_id, P[i].id}, P[i]};
@@ -104,6 +95,11 @@ namespace CPAMBB{
 		});
 		zmap m1(entries);
 		// auto vals = zmap::values(m1);
+		// for (auto i = 1; i < vals.size(); i++){
+		// 	if (vals[i].morton_id < vals[i - 1].morton_id){
+		// 		cout << "[ERROR]: not sorted" << endl;
+		// 	}
+		// }
 		return m1;
 	}	
 
@@ -172,6 +168,35 @@ namespace CPAMBB{
 		// zmap::range_report_filter(tree, f, ret, out);
 		zmap::range_report_filter2(tree, f, ret, out);
 		return ret;
+	}
+
+	template<typename M, typename DIFF>
+	auto plain_map_spatial_diff(M &lhs, M &rhs, Bounding_Box &query, DIFF &ret_diff, parlay::sequence<Point> &l_pts, parlay::sequence<Point> &r_pts){
+		// auto l_pts = zmap::values(filter_range(lhs, query));
+		// auto r_pts = zmap::values(filter_range(rhs, query));
+
+		auto ret1 = range_report(lhs, query, l_pts);
+		auto ret2 = range_report(rhs, query, r_pts);
+		l_pts.resize(ret1);
+		r_pts.resize(ret2);
+		// print_Pset_info(l_pts, "lpts");
+		// for (auto &pt: l_pts){
+		// 	cout << pt.morton_id << endl;
+		// }
+		// print_Pset_info(r_pts, "rpts");
+		// for (auto &pt: r_pts){
+		// 	cout << pt.morton_id << endl;
+		// }
+		// cout << "debug: " << l_pts.size() << ", " << r_pts.size() << endl;
+		// auto [add, remove] = merge_pts(l_pts, r_pts);
+		// cout << "l size = " << l_pts.size() << endl;
+		// cout << "r size = " << r_pts.size() << endl;
+		
+		merge_pts(l_pts, r_pts, ret_diff);
+		
+		// geobase::print_Pset_info(add, "add");
+		// geobase::print_Pset_info(remove, "remove");
+		return;
 	}
 
 	template<typename T>

@@ -77,7 +77,11 @@
         "filesystem": "cpp",
         "core": "cpp",
         "any": "cpp",
-        "source_location": "cpp"
+        "source_location": "cpp",
+        "format": "cpp",
+        "ranges": "cpp",
+        "span": "cpp",
+        "stacktrace": "cpp"
     },
     "cmake.sourceDirectory": "/data/bhuan102/cpam-quadtree/CPAM/baselines/SpaceTreeLib/include/parlaylib"
 }

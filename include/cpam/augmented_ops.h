@@ -326,7 +326,6 @@ struct augmented_ops : Map {
     
     if (flag < 0) return; //exclude
 
-
     if (Map::is_compressed(b)){ // leaf node
       // visited_leaf++;
       
@@ -362,12 +361,11 @@ struct augmented_ops : Map {
     
     auto pt_box = std::make_pair(cur_pt, cur_pt);
     auto flag2 = f(pt_box) == 1 ? 1 : 0;
+    range_report_filter2(rb->lc, f, cnt, out, granularity); 
     if (flag2) {
       parlay::assign_uninitialized(out[cnt++], cur_pt);
       // out[cnt++] = cur_pt;
     }
-
-    range_report_filter2(rb->lc, f, cnt, out, granularity); 
     range_report_filter2(rb->rc, f, cnt, out, granularity); 
   }
 
@@ -458,11 +456,37 @@ struct augmented_ops : Map {
     }
   }
 
+  template <class Func>
+  static node* aug_filter_bc2(ptr b1, const Func& f) {
+    assert(b1.size() > 0);
+    ET stack[kBaseCaseSize + 1];
+
+    auto b1_node = b1.node_ptr();
+    size_t offset = 0;
+    // aug_t cur = Entry::get_empty();
+    auto copy_f = [&] (ET a) {  // has to be a copy since we move
+      // cur = Entry::combine(cur, Entry::from_entry(a));
+      if (f(a)) {
+        parlay::move_uninitialized(stack[offset++], a);
+      }
+    };
+    Map::iterate_seq(b1_node, copy_f);
+    assert(offset <= kBaseCaseSize);
+
+    Map::decrement_recursive(b1_node);
+
+    if (offset < B) {
+      return Map::to_tree_impl((ET*)stack, offset);
+    } else {
+      return Map::make_compressed(stack, offset);
+    }
+  }
+
   template<class Fpt, class Fbb>
-  static node* aug_filter2(ptr b, const Fpt& fpt, Fbb &fbb, size_t granularity=kNodeLimit) {
+  static node* aug_filter2(ptr b, const Fpt& fpt, const Fbb &fbb, size_t granularity=kNodeLimit) {
     if (b.empty()) return NULL;
     if (b.size() <= kBaseCaseSize) {
-      return aug_filter_bc(std::move(b), fpt);
+      return aug_filter_bc2(std::move(b), fpt);
     }
     // TODO: better functionality for getting aug_val from b
     // std::cout << "My aug_val = " << aug_val(b.unsafe_ptr()) << std::endl;
@@ -475,7 +499,7 @@ struct augmented_ops : Map {
       [&]() {return aug_filter2(std::move(lc), fpt, fbb, granularity);},
       [&]() {return aug_filter2(std::move(rc), fpt, fbb, granularity);});
 
-    if (fpt(Entry::from_entry(e))) {
+    if (fpt(e)) {
       return Map::join(l, e, r, root);
     } else {
       GC::decrement(root);

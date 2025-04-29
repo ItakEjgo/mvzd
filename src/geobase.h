@@ -155,6 +155,41 @@ namespace geobase
 
     typedef pair<Point, Point> Bounding_Box;
 
+    struct diff_type{
+        size_t add_cnt, remove_cnt;
+        parlay::sequence<Point> add, remove;
+        diff_type(){
+            add_cnt = 0;
+            remove_cnt = 0;
+        }
+        diff_type(size_t add_sz, size_t remove_sz){
+            add_cnt = 0;
+            remove_cnt = 0;
+            add = parlay::sequence<Point>::uninitialized(add_sz);
+            remove = parlay::sequence<Point>::uninitialized(remove_sz);
+        }
+        void add_point(Point &p, bool reverse = false){
+            if (!reverse){
+                parlay::assign_uninitialized(add[add_cnt++], p);
+            }
+            else{
+                parlay::assign_uninitialized(remove[remove_cnt++], p);
+            }
+        }
+        void remove_point(Point &p, bool reverse = false){
+            if (!reverse){
+                parlay::assign_uninitialized(remove[remove_cnt++], p);
+            }
+            else{
+                parlay::assign_uninitialized(add[add_cnt++], p);
+            }
+        }
+        void compact(){
+            add.resize(add_cnt);
+            remove.resize(remove_cnt);
+        }
+    };
+
     template <class T>
     auto read_pts(T &P, ifstream &fin, bool real_data = false)
     {
@@ -697,6 +732,55 @@ namespace geobase
     }
 
     // delete rhs from lhs, merge by morton_id and point id
+    template <typename T, typename P, typename DIFF>
+    auto merge_pts(P &a, T &b, DIFF &ret_diff, bool reverse = false){
+        size_t i = 0, j = 0;
+        //  0: same point, 1: first is smaller, 2: second is smaller
+        auto pt_cmp = [&](const auto &pt1, const auto &pt2){
+            if (pt1.morton_id == pt2.morton_id){
+                if (pt1.id == pt2.id){
+                    return 0;
+                }
+                else{
+                    return pt1.id < pt2.id ? 1 : 2;
+                }
+            }
+            else{
+                return pt1.morton_id < pt2.morton_id ? 1 : 2;
+            }
+        };
+
+        while (i < a.size() && j < b.size()){
+            auto flag = pt_cmp(a[i], b[j]);
+            if (!flag){ // same point
+                i++, j++;
+            }
+            else if (flag == 1){ // first smaller, in A not in B
+                // parlay::assign_uninitialized(removed[cnt_remove++], a[i++]);
+                ret_diff.remove_point(a[i], reverse);
+                i++;
+            }
+            else{ //  second smaller, in B not in A
+                // parlay::assign_uninitialized(added[cnt_add++], b[j++]);
+                ret_diff.add_point(b[j], reverse);
+                j++;
+            }
+        }
+        while (i < a.size()){
+            // parlay::assign_uninitialized(removed[cnt_remove++], a[i++]);
+            ret_diff.remove_point(a[i], reverse);
+            i++;
+        }
+        while (j < b.size()){
+            // parlay::assign_uninitialized(added[cnt_add++], b[j++]);
+            ret_diff.add_point(b[j], reverse);
+            j++;
+        }
+
+        return;
+    }
+
+    // delete rhs from lhs, merge by morton_id and point id
     template <typename T, typename P>
     auto merge_pts(P &a, T &b){
         size_t i = 0, j = 0;
@@ -721,13 +805,6 @@ namespace geobase
         size_t cnt_add = 0, cnt_remove = 0;
 
         while (i < a.size() && j < b.size()){
-            // cout << "i, j: " << i << ", " << j << endl;
-            // if (a[i].id > 200000){
-            //     cout << "bug a point: " << a[i] << endl;
-            // }
-            // if (b[j].id > 200000){
-            //     cout << "bug b point: " << b[j] << endl;
-            // }
             auto flag = pt_cmp(a[i], b[j]);
             if (!flag){ // same point
                 i++, j++;
@@ -753,8 +830,8 @@ namespace geobase
     }
 
     // delete rhs from lhs, merge by morton_id and point id, apply F
-    template <typename T, typename P, typename F>
-    auto merge_pts(P &a, T &b, F &f){
+    template <typename T, typename P, typename F, typename DIFF>
+    auto merge_pts(P &a, T &b, F &f, DIFF &ret_diff, bool reverse = false){
         size_t i = 0, j = 0;
         //  0: same point, 1: first is smaller, 2: second is smaller
         auto pt_cmp = [&](const auto &pt1, const auto &pt2){
@@ -771,60 +848,44 @@ namespace geobase
             }
         };
 
-        auto added = parlay::sequence<Point>::uninitialized(b.size());
-        auto removed = parlay::sequence<Point>::uninitialized(a.size());
-
-        size_t cnt_add = 0, cnt_remove = 0;
-
         while (i < a.size() && j < b.size()){
-            // cout << "i, j: " << i << ", " << j << endl;
-            // if (a[i].id > 200000){
-            //     cout << "bug a point: " << a[i] << endl;
-            // }
-            // if (b[j].id > 200000){
-            //     cout << "bug b point: " << b[j] << endl;
-            // }
             auto flag = pt_cmp(a[i], b[j]);
+
             if (!flag){ // same point
                 i++, j++;
             }
             else if (flag == 1){ // first smaller, in A not in B
-                if (f(a[i])){
-                    parlay::assign_uninitialized(removed[cnt_remove++], a[i++]);
+                if (f(a[i])) {
+                    ret_diff.remove_point(a[i], reverse);
+                    // parlay::assign_uninitialized(ret_diff.remove[ret_diff.remove_cnt++], a[i]);
                 }
-                else{
-                    i++;
-                }
-            }
-            else{ //  second smaller, in B not in A
-                if (f(b[j])){
-                    parlay::assign_uninitialized(added[cnt_add++], b[j++]);
-                }
-                else{
-                    j++;
-                }
-            }
-        }
-        while (i < a.size()){
-            if (f(a[i])){
-                parlay::assign_uninitialized(removed[cnt_remove++], a[i++]);
-            }
-            else{
+
                 i++;
             }
-        }
-        while (j < b.size()){
-            if (f(b[j])){
-                parlay::assign_uninitialized(added[cnt_add++], b[j++]);
-            }
-            else{
+            else{ //  second smaller, in B not in A
+                if (f(b[j])) {
+                    ret_diff.add_point(b[j], reverse);
+                    // parlay::assign_uninitialized(ret_diff.add[ret_diff.add_cnt++], b[j]);
+                }
                 j++;
             }
         }
-        removed.resize(cnt_remove);
-        added.resize(cnt_add);
-
-        return make_tuple(added, removed);
+        while (i < a.size()){
+            if (f(a[i])) {
+                ret_diff.remove_point(a[i], reverse);
+                // parlay::assign_uninitialized(ret_diff.remove[ret_diff.remove_cnt++], a[i]);
+            }
+            i++;
+        }
+        while (j < b.size()){
+            if (f(b[j])){
+                ret_diff.add_point(b[j], reverse);
+                // parlay::assign_uninitialized(ret_diff.add[ret_diff.add_cnt++], b[j]);
+            } 
+            j++;
+        }
+        
+        return;
     }
     
 
