@@ -1,11 +1,12 @@
 #include<bits/stdc++.h>
 #include <boost/geometry.hpp>
 #include <boost/geometry/index/rtree.hpp>
+#include <boost/geometry/index/detail/rtree/utilities/view.hpp>
 #include "helper/geobase.h"
 #include "helper/parse_command_line.h"
 #include "helper/time_loop.h"
 
-#define TEST
+// #define TEST
 
 using namespace std;
 namespace bg = boost::geometry;
@@ -43,8 +44,8 @@ auto convert_Q(T &Q){
 
 template <typename T>
 auto diff_by_id(T &a, T &b){
+
     auto id_cmp = [&](auto &lhs, auto &rhs) { return lhs.second < rhs.second; };
-    
     auto sorted_a = parlay::sort(a, id_cmp);
     auto sorted_b = parlay::sort(b, id_cmp);
 
@@ -54,7 +55,7 @@ auto diff_by_id(T &a, T &b){
     size_t cnt_add = 0, cnt_remove = 0;
     size_t i = 0, j = 0;
 
-    while (i < a.size() && j < b.size()){
+    while (i < sorted_a.size() && j < sorted_b.size()){
         if (sorted_a[i].second == sorted_b[j].second){ // same point, check coordinate
             if (bg::equals(sorted_a[i].first, sorted_b[j].first)){ //  same coordinate, do nothing
                 i++, j++;
@@ -93,17 +94,64 @@ void print_values(const std::vector<Value>& values) {
 }
 
 template<typename PT, typename RQ>
+void range_report_test(PT P, RQ Q, parlay::sequence<size_t> &cnt){
+    auto P_conv = convert_P(P);
+    auto Q_conv = convert_Q(Q);
+
+    RTree rtree(P_conv.begin(), P_conv.end());  //  original version 
+
+    parlay::sequence<size_t> rangeCnt(Q.size());
+    // parlay::sequence<parlay::sequence<Point> > rangeReport(querys.size());
+    vector<vector<Point> > rangeReport(Q.size());
+    for (size_t i = 0; i < Q.size(); i++){
+        // rangeReport[i].resize(cnt[i]);
+        rangeReport[i].reserve(cnt[i]);
+    }
+
+    auto avg_time = time_loop(
+        3, 1.0, 
+        [&]() {
+        },
+        [&]() {					
+            for (size_t i = 0; i < Q_conv.size(); i++){
+                rtree.query(bgi::intersects(bg::model::box<Point>(Q_conv[i].first, Q_conv[i].second)), std::back_inserter(rangeReport[i]));
+                rangeCnt[i] = rangeReport[i].size();
+            }
+        },
+        [&](){} 
+    );
+
+    /* Correctness Check */
+    bool ok = true;
+    parlay::parallel_for(0, Q.size(), [&](size_t i){
+    	if (cnt[i] != rangeCnt[i]){
+    		ok = false;
+    	}
+    });
+    if (!ok){
+    	cout << "[ERROR] incorrect range count result !!!" << endl;
+    }
+}
+
+template<typename PT, typename RQ>
 void spatial_diff_test(PT &P, RQ &range_queries, parlay::sequence<size_t> &batch_sizes, size_t &insert_ratio){
     auto P_conv = convert_P(P);
     RTree rtree(P_conv.begin(), P_conv.end());  //  original version
+    cout << "original version bulkload finished." << endl;
+    // cout << rtree.depth() << endl;
     auto max_batch_size = batch_sizes[batch_sizes.size() - 1];
+    if (P.size() < max_batch_size) max_batch_size = P.size();
 
     /* get insert, delete points */
     auto P_test = geobase::shuffle_point(P, max_batch_size);
+    cout << "shuffle finished." << endl;
     auto [P_insert_set, P_delete_set] = geobase::split_insert_delete(P_test, insert_ratio, P.size());
+    cout << "split finished." << endl;
     auto Q_conv = convert_Q(range_queries);
+    cout << "query convert finished." << endl;
     
     for (auto &batch_size: batch_sizes){
+        if (batch_size > P.size()) break;
         cout << "[INFO] Batch Size: " << batch_size << endl;
         auto insert_num = batch_size / 10 * insert_ratio;
         auto delete_num = batch_size / 10 * (10 - insert_ratio);
@@ -115,18 +163,22 @@ void spatial_diff_test(PT &P, RQ &range_queries, parlay::sequence<size_t> &batch
         auto P_newver = geobase::collect_newver_point(P, P_insert, P_delete);
         auto P_newver_conv = convert_P(P_newver);
         RTree rtree2(P_newver_conv.begin(), P_newver_conv.end());
+        cout << "new version bulkload finished." << endl;
 
         parlay::sequence<size_t> addCnt(range_queries.size());
         parlay::sequence<size_t> removeCnt(range_queries.size());
         vector<Value> res1, res2;
-
+        cout << "alloc finished." << endl;
+        
         auto avg_time = time_loop(
             3, 1.0,
             [&](){},
             [&](){
                 for (size_t i = 0; i < Q_conv.size(); i++){
-                    res1.clear();
-                    res2.clear();
+                    res1.resize(0);
+                    res2.resize(0);
+                    res1.reserve(2 * maxSize);
+                    res2.reserve(2 * maxSize);
                     rtree.query(bgi::intersects(bg::model::box<Point>(Q_conv[i].first, Q_conv[i].second)), std::back_inserter(res1));
                     rtree2.query(bgi::intersects(bg::model::box<Point>(Q_conv[i].first, Q_conv[i].second)), std::back_inserter(res2));
                     auto [add, remove] = diff_by_id(res1, res2);
@@ -173,9 +225,9 @@ void run(int argc, char** argv){
 	parlay::sequence<geobase::Point> P;
 	geobase::read_pts(P, fin, is_real);	//	change to true if id is contained.
 
-    auto P_conv = convert_P(P); // get point format for boost
-    RTree rtree(P_conv.begin(), P_conv.end());
-    cout << "bulk-load finished." << endl;
+    // auto P_conv = convert_P(P); // get point format for boost
+    // RTree rtree(P_conv.begin(), P_conv.end());
+    // cout << "bulk-load finished." << endl;
 
     if (task == "spatial-diff"){
 		string query_file = cmd.getOptionValue("-r");
