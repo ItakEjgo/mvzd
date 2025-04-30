@@ -556,25 +556,17 @@ void run(int argc, char** argv){
 			line_splitter();
 			cout << "[cpamz fix ratio]: " << endl;
 			CPAMZ::spatial_diff_test_fix_size(P, range_report_querys, ratios);
-
-
-			// cout << "Q: "; print_mbr(range_report_querys[0]);
-			// for (size_t i = 0; i < ret1.size(); i++){
-			// 	if (ret1[i].id != ret2[i].id){
-			// 		// cout << ret1[i].id << " " << ret2[i].id << " " << ret3[i].id << endl;
-			// 		cout << ret1[i].id << " " << ret2[i].id << endl;
-			// 		cout << ret1[i].x << " " << ret1[i].y << endl;
-			// 		// cout << ret2[i].x << " " << ret2[i].y << endl;
-			// 		// cout << ret2[i].x << " " << ret2[i].y << endl;
-			// 		int x; cin >> x;
-			// 	}
-			// }
 		}
 	}
 
-
-	
-	
+	if (task == "spatial-join"){
+		auto t = cmd.getOptionIntValue("-bf", 1000);
+		auto P1 = P.substr(0, 5000);
+		auto P2 = P.substr(5000, 5000);
+		FT point_dis = 1.0 * t;
+		cout << "[INFO] point dis is: " << t << endl;
+		ZDTest::spatial_join_test(P1, P2, point_dis);
+	}	
 }
 
 int main(int argc, char **argv) {

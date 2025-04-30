@@ -1263,6 +1263,65 @@ namespace CPAMZ{
 
 namespace ZDTest{
 
+	template<typename PT>
+	void spatial_join_test(PT &P1, PT &P2, FT &point_dis){
+		auto P_set = get_sorted_points(P1);
+		ZDTree::Tree zdtree(leaf_size);
+		zdtree.build(P_set);	// initial version for P1
+
+		P_set = get_sorted_points(P2);
+		ZDTree::Tree zdtree2(leaf_size);
+		zdtree2.build(P_set);
+
+		parlay::sequence<pair<geobase::Point, geobase::Point> > join_res = {};
+
+		auto avg_time = time_loop(
+			3, 1.0,
+			[&](){
+				join_res.clear();
+			},
+			[&](){
+				zdtree.two_version_spatial_join(zdtree.root, zdtree2.root, point_dis, join_res, largest_mbr, largest_mbr);
+			},
+			[&]{}
+		);
+		cout << fixed << setprecision(6) << "[zdtree] spatial-join time (avg): " << avg_time << endl;
+
+		#ifdef TEST
+			auto cmp = [](const auto &lhs, const auto &rhs){
+				if (lhs.first.id != rhs.first.id) return lhs.first.id < rhs.first.id;
+				return lhs.second.id < rhs.second.id;
+			};
+			join_res = parlay::sort(join_res, cmp);
+			parlay::sequence<pair<geobase::Point, geobase::Point> > bf_res = {};
+			
+			for (auto &pt1: P1){
+				for (auto &pt2: P2){
+					if (dcmp(geobase::point_point_sqrdis(pt1, pt2) - point_dis * point_dis) <= 0){
+						bf_res.emplace_back(pt1, pt2);
+					}
+				}
+			}
+
+			bf_res = parlay::sort(bf_res, cmp);
+			if (join_res != bf_res){
+				cout << "[ERROR] Incorrect Join Results" << endl;
+				cout << "Join Res: " << join_res.size() << endl;
+				for (auto &par: join_res){
+					cout << fixed << setprecision(6) << sqrt(point_point_sqrdis(par.first, par.second)) << " | " << par.first << ", " << par.second << endl;
+				}
+				cout << "BF Res: " << bf_res.size() << endl;
+				for (auto &par: bf_res){
+					cout << fixed << setprecision(6) << sqrt(point_point_sqrdis(par.first, par.second)) << " | " << par.first << ", " << par.second << endl;
+				}
+			}
+			else{
+				cout << "[INFO] Correct Join Restuls" << endl;
+				cout << "join/bf size: " << join_res.size() << ", " << bf_res.size() << endl;
+			}
+		#endif
+	}
+
 	template<typename PT, typename RQ>
     void plain_spatial_diff_test_latency(PT &P, RQ &range_queries, parlay::sequence<size_t> &batch_sizes, size_t &insert_ratio, bool dual_traverse = false){
         /*  build tree */
@@ -1292,6 +1351,9 @@ namespace ZDTest{
 	
 			parlay::sequence<size_t> addCnt(range_queries.size());
 			parlay::sequence<size_t> removeCnt(range_queries.size());
+			// parlay::sequence<size_t> pts1Cnt(range_queries.size());
+			// parlay::sequence<size_t> pts2Cnt(range_queries.size());
+			// map<size_t, size_t> pts_map, diff_map;
 	
 			auto avg_time = time_loop(
 				3, 1.0,
@@ -1310,6 +1372,8 @@ namespace ZDTest{
 							pts2.resize(cnt2);
 							// print_Pset_info(pts1, "pts1");
 							// print_Pset_info(pts2, "pts2");
+							// pts_map[cnt1]++;
+							// pts_map[cnt2]++;
 							diff_type ret_diff(maxSize, maxSize);
 							merge_pts(pts1, pts2, ret_diff);
 							// print_Pset_info(add, "add");
@@ -1317,6 +1381,8 @@ namespace ZDTest{
 							ret_diff.compact();
 							addCnt[i] = ret_diff.add.size();
 							removeCnt[i] = ret_diff.remove.size();
+							// diff_map[addCnt[i]]++;
+							// diff_map[removeCnt[i]]++;
 						}
 						else{
 							diff_type ret_diff(maxSize, maxSize);
@@ -1335,6 +1401,16 @@ namespace ZDTest{
 			else{
 				cout << fixed << setprecision(6) << "[zdtree-plain-dual] spatial-diff time (avg): " << avg_time << endl;
 			}
+			// cout << "---------------------------Splitter------------------------------" << endl;
+			// cout << "range query ret size: " << endl;
+			// for (auto &par: pts_map){
+			// 	cout << par.first << " " << par.second << endl;
+			// }
+			// cout << "---------------------------Splitter------------------------------" << endl;
+			// cout << "spatial diff ret size: " << endl;
+			// for (auto &par: diff_map){
+			// 	cout << par.first << " " << par.second << endl;
+			// }
 			
 			#ifdef TEST
 				string file_name = "output/zd_spatial_diff_plain-" + to_string(batch_size); 
@@ -1381,6 +1457,7 @@ namespace ZDTest{
 			parlay::sequence<size_t> addCnt(range_queries.size());
 			parlay::sequence<size_t> removeCnt(range_queries.size());
 
+			diff_type ret_diff(maxSize, maxSize);
 			auto avg_time = time_loop(
 				3, 1.0,
 				[&](){},
@@ -1388,8 +1465,8 @@ namespace ZDTest{
 					for (size_t i = 0; i < range_queries.size(); i++){
 						// cout << "processing: " << i << endl;
 						// print_mbr(range_queries[i]);
-						diff_type ret_diff(maxSize, maxSize);
 						// auto[add, remove] = zdtree.spatial_two_version_diff(zdtree.root, new_ver2, range_queries[i], largest_mbr);
+						ret_diff.reset(maxSize, maxSize);
 						zdtree.spatial_two_version_diff(zdtree.root, new_ver2, range_queries[i], largest_mbr, ret_diff);
 						ret_diff.add.resize(ret_diff.add_cnt);
 						ret_diff.remove.resize(ret_diff.remove_cnt);

@@ -188,6 +188,15 @@ namespace ZDTree{
 		auto spatial_diff(shared_ptr<BaseNode> &node1, shared_ptr<BaseNode> &node2, Bounding_Box &query_mbr, Bounding_Box &cur_mbr, 
 							FT x_prefix, FT y_prefix, size_t b, bool x_splitter, DIFF &ret_diff);
 
+		template<typename JOIN_RES>
+		void spatial_join(shared_ptr<BaseNode> &node1, shared_ptr<BaseNode> &node2, FT &point_dis, JOIN_RES &join_res,
+								Bounding_Box &mbr1, FT x_prefix1, FT y_prefix1, size_t b1, bool x_splitter1,
+								Bounding_Box &mbr2, FT x_prefix2, FT y_prefix2, size_t b2, bool x_splitter2);
+		
+		template<typename JOIN_RES>
+		void two_version_spatial_join(shared_ptr<BaseNode> &node1, shared_ptr<BaseNode> &node2, FT &point_dis, JOIN_RES &join_res,
+									Bounding_Box mbr1, Bounding_Box mbr2);
+
 		template<typename DIFF>
 		auto spatial_two_version_diff(shared_ptr<BaseNode> &node1, shared_ptr<BaseNode> &node2, Bounding_Box &query_mbr, Bounding_Box &cur_mbr, 
 										DIFF &ret_diff);
@@ -555,18 +564,6 @@ namespace ZDTree{
 		spatial_diff(cur_inte1->l_son, cur_inte2->l_son, query_mbr, L_box, x_prefix, y_prefix, b - 1, !x_splitter, ret_diff);
 		spatial_diff(cur_inte1->r_son, cur_inte2->r_son, query_mbr, R_box, rx_prefix, ry_prefix, b - 1, !x_splitter, ret_diff);
 
-		// sequence<Point> L_add, L_remove, R_add, R_remove;
-		// auto diff_left = [&](){ tie(L_add, L_remove) = spatial_diff(cur_inte1->l_son, cur_inte2->l_son, query_mbr, L_box, x_prefix, y_prefix, b - 1, !x_splitter, ret_diff); };
-		// auto diff_right = [&](){ tie(R_add, R_remove) = spatial_diff(cur_inte1->r_son, cur_inte2->r_son, query_mbr, R_box, rx_prefix, ry_prefix, b - 1, !x_splitter, ret_diff); };
-		// diff_left();
-		// diff_right();
-		// par_do_if(node1->get_num_points() + node2->get_num_points() >= granularity_cutoff, 
-		// 	diff_left,
-		// 	diff_right);
-		// L_add.append(R_add);
-		// L_remove.append(R_remove);
-
-		// return make_tuple(L_add, L_remove);
 		return;
 	}
 
@@ -615,6 +612,86 @@ namespace ZDTree{
 		t.next("commit time");
 
 		return make_tuple(new_ver, conflict_insert, conflict_update, conflict_delete);
+	}
+
+	// spatial join w.r.t. function F
+	template<typename JOIN_RES>
+	void Tree::spatial_join(shared_ptr<BaseNode> &node1, shared_ptr<BaseNode> &node2, FT &point_dis, JOIN_RES &join_res,
+							Bounding_Box &mbr1, FT x_prefix1, FT y_prefix1, size_t b1, bool x_splitter1,
+							Bounding_Box &mbr2, FT x_prefix2, FT y_prefix2, size_t b2, bool x_splitter2){
+		
+		if (!node1 || !node2) return;
+
+		if (!mbr_mbr_within_dis(mbr1, mbr2, point_dis)) return;
+		// Base Case
+		if (node1->is_leaf() && node2->is_leaf()){
+			auto leaf1 = static_cast<LeafNode*>(node1.get());
+			auto leaf2 = static_cast<LeafNode*>(node2.get());
+			for (auto &pt1: leaf1->records){
+				for (auto &pt2: leaf2->records){
+					if (pt1.id != pt2.id && dcmp(point_point_sqrdis(pt1, pt2) - point_dis * point_dis) <= 0){
+						join_res.emplace_back(pt1, pt2);
+					}
+				}
+			}
+		}
+
+		if (!node1->is_leaf() && !node2->is_leaf()){
+			auto cur_inte1 = static_cast<InteNode*>(node1.get());
+			auto cur_inte2 = static_cast<InteNode*>(node2.get());
+	
+			auto [L_box1, R_box1, rx_prefix1, ry_prefix1] = compute_cur_box(mbr1, x_prefix1, y_prefix1, b1, x_splitter1);
+			auto [L_box2, R_box2, rx_prefix2, ry_prefix2] = compute_cur_box(mbr2, x_prefix2, y_prefix2, b2, x_splitter2);
+			/* Case LL */
+			spatial_join(cur_inte1->l_son, cur_inte2->l_son, point_dis, join_res, 
+						L_box1, x_prefix1, y_prefix1, b1 - 1, !x_splitter1, 
+						L_box2, x_prefix2, y_prefix2, b2 - 1, !x_splitter2);
+			/* Case LR */
+			spatial_join(cur_inte1->l_son, cur_inte2->r_son, point_dis, join_res, 
+				L_box1, x_prefix1, y_prefix1, b1 - 1, !x_splitter1, 
+				R_box2, rx_prefix2, ry_prefix2, b2 - 1, !x_splitter2);
+			/* Case RL*/
+			spatial_join(cur_inte1->r_son, cur_inte2->l_son, point_dis, join_res, 
+				R_box1, rx_prefix1, ry_prefix1, b1 - 1, !x_splitter1, 
+				L_box2, x_prefix2, y_prefix2, b2 - 1, !x_splitter2);
+			/* Case RR*/
+			spatial_join(cur_inte1->r_son, cur_inte2->r_son, point_dis, join_res, 
+				R_box1, rx_prefix1, ry_prefix1, b1 - 1, !x_splitter1, 
+				R_box2, rx_prefix2, ry_prefix2, b2 - 1, !x_splitter2);
+		}
+		else if (!node1->is_leaf()){
+			auto cur_inte1 = static_cast<InteNode*>(node1.get());
+			auto [L_box1, R_box1, rx_prefix1, ry_prefix1] = compute_cur_box(mbr1, x_prefix1, y_prefix1, b1, x_splitter1);
+			/* Case L-cur_Leaf */
+			spatial_join(cur_inte1->l_son, node2, point_dis, join_res, 
+				L_box1, x_prefix1, y_prefix1, b1 - 1, !x_splitter1, 
+				mbr2, x_prefix2, y_prefix2, b2, x_splitter2);
+			/* Case R-cur_leaf */
+			spatial_join(cur_inte1->r_son, node2, point_dis, join_res, 
+				R_box1, rx_prefix1, ry_prefix1, b1 - 1, !x_splitter1, 
+				mbr2, x_prefix2, y_prefix2, b2, x_splitter2);
+		}
+		else if (!node2->is_leaf()){
+			auto cur_inte2 = static_cast<InteNode*>(node2.get());
+			auto [L_box2, R_box2, rx_prefix2, ry_prefix2] = compute_cur_box(mbr2, x_prefix2, y_prefix2, b2, x_splitter2);
+			/* Case cur_Leaf-L */
+			spatial_join(node1, cur_inte2->l_son, point_dis, join_res, 
+				mbr1, x_prefix1, y_prefix1, b1, x_splitter1,	
+				L_box2, x_prefix2, y_prefix2, b2 - 1, !x_splitter2);
+			/* Case cur_leaf-R */
+			spatial_join(node1, cur_inte2->r_son, point_dis, join_res, 
+				mbr1, x_prefix1, y_prefix1, b1, x_splitter1,	
+				R_box2, rx_prefix2, ry_prefix2, b2 - 1, !x_splitter2);			
+		}
+		return;
+	}
+
+	template<typename JOIN_RES>
+	void Tree::two_version_spatial_join(shared_ptr<BaseNode> &node1, shared_ptr<BaseNode> &node2, FT &point_dis, JOIN_RES &join_res,
+									Bounding_Box mbr1, Bounding_Box mbr2){
+		spatial_join(node1, node2, point_dis, join_res,
+						mbr1, 0.0, 0.0, 64, true,
+						mbr2, 0.0, 0.0, 64, true);
 	}
 
 	Tree::Tree(size_t _leaf_sz){

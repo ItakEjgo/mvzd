@@ -188,6 +188,16 @@ namespace geobase
             add.resize(add_cnt);
             remove.resize(remove_cnt);
         }
+        void reset(){
+            add_cnt = 0;
+            remove_cnt = 0;
+        }
+        void reset(size_t add_sz, size_t remove_sz){
+            add_cnt = 0;
+            remove_cnt = 0;
+            add = parlay::sequence<Point>::uninitialized(add_sz);
+            remove = parlay::sequence<Point>::uninitialized(remove_sz);
+        }
     };
 
     template <class T>
@@ -383,6 +393,13 @@ namespace geobase
             y_max = max(y_max, p.y);
         }
         return Bounding_Box({Point(x_min, y_min), Point(x_max, y_max)});
+    }
+
+    auto mbr_mbr_within_dis(Bounding_Box &mbr1, Bounding_Box &mbr2, FT &point_dis){
+        return !(dcmp(mbr1.second.x + point_dis - mbr2.first.x) < 0 ||
+                dcmp(mbr1.second.y + point_dis - mbr2.first.y) < 0 ||
+                dcmp(mbr2.second.x + point_dis - mbr1.first.x) < 0 ||
+                dcmp(mbr2.second.y + point_dis - mbr1.first.y) < 0);
     }
 
     // return the sqr distance between a point and a mbr
