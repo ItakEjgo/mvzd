@@ -303,17 +303,13 @@ namespace geobase
     }
 
     template <class T>
-    size_t split_by_bit(T &P, size_t l, size_t r, size_t b)
-    {
-        // size_t split_value = (1ull << (b - 1));
+    size_t split_by_bit(T &P, size_t l, size_t r, size_t b){
         unsigned int splitter = (1u << ((b - 1) / 2));
-        auto less = [&](auto pt)
-        {
+        auto less = [&](auto pt){
             return b % 2 ? (static_cast<unsigned int>(pt.y) & splitter) == 0 : (static_cast<unsigned int>(pt.x) & splitter) == 0;
         };
         size_t start = l, end = r, mid = start;
-        while (end - start > 16)
-        {
+        while (end - start > 16){
             mid = (start + end) / 2;
             if (!less(P[mid]))
                 end = mid;
@@ -321,10 +317,8 @@ namespace geobase
                 start = mid + 1;
         }
         mid = end;
-        for (auto i = start; i < end; i++)
-        {
-            if (!less(P[i]))
-            {
+        for (auto i = start; i < end; i++){
+            if (!less(P[i])){
                 mid = i;
                 return i;
             }
@@ -543,8 +537,7 @@ namespace geobase
     }
 
     template <typename Pset>
-    auto shuffle_point(Pset &P, size_t substr_size = -1)
-    {
+    auto shuffle_point(Pset &P, size_t substr_size = 0){
         auto n = P.size();
         parlay::sequence<Point> rand_p(n);
         // random_device rd;
@@ -553,8 +546,7 @@ namespace geobase
         parlay::parallel_for(0, n, [&](size_t i)
                              { rand_p[i] = P[i]; });
         shuffle(rand_p.begin(), rand_p.end(), g);
-        if (substr_size > 0)
-        {
+        if (substr_size > 0){
             rand_p = rand_p.substr(0, substr_size);
         }
         return rand_p;
@@ -626,34 +618,19 @@ namespace geobase
     auto get_delete_p(parlay::sequence<Point> &lhs, parlay::sequence<Point> &P, size_t l, size_t r)
     {
         auto ret = parlay::sequence<Point>::uninitialized(lhs.size());
-        // cout << "lhs: ";
-        // for (auto i = 0; i < lhs.size(); i++){
-        //     cout << lhs[i].morton_id << ", " << lhs[i].id << endl;;
-        // }
-        // cout << endl;
-        // cout << "P: ";
-        // for (auto i = l; i < r; i++){
-        //     cout << P[i].morton_id << ", " << P[i].id << endl;
-        // }
-        // cout << endl;
-        auto pt_cmp = [&](auto &pt1, auto &pt2)
-        {
-            if (pt1.morton_id == pt2.morton_id)
-            {
-                if (pt1.id == pt2.id)
-                {
+        auto pt_cmp = [&](auto &pt1, auto &pt2){
+            if (pt1.morton_id == pt2.morton_id){
+                if (pt1.id == pt2.id){
                     return 0;
                 }
-                else
-                {
+                else{
                     if (pt1.id < pt2.id)
                         return 1;
                     else
                         return 2;
                 }
             }
-            else
-            {
+            else{
                 if (pt1.morton_id < pt2.morton_id)
                     return 1;
                 else
@@ -661,24 +638,19 @@ namespace geobase
             }
         };
         size_t i = 0, j = l, cnt = 0;
-        while (i < lhs.size() && j < r)
-        {
+        while (i < lhs.size() && j < r){
             auto flag = pt_cmp(lhs[i], P[j]);
-            if (!flag)
-            { // point should be deleted
+            if (!flag){ // point should be deleted
                 i++, j++;
             }
-            else if (flag == 1)
-            { // first smaller, in A not in B
+            else if (flag == 1){ // first smaller, in A not in B
                 parlay::assign_uninitialized(ret[cnt++], lhs[i++]);
             }
-            else
-            { //  second smaller, in B not in A
+            else{ //  second smaller, in B not in A
                 j++;
             }
         }
-        while (i < lhs.size())
-        {
+        while (i < lhs.size()){
             parlay::assign_uninitialized(ret[cnt++], lhs[i++]);
         }
         ret.resize(cnt);
@@ -689,24 +661,19 @@ namespace geobase
     auto get_delete_p(parlay::sequence<Point> &lhs, parlay::sequence<Point> &P, size_t l, size_t r, Func &f)
     {
         auto ret = parlay::sequence<Point>::uninitialized(lhs.size());
-        auto pt_cmp = [&](auto &pt1, auto &pt2)
-        {
-            if (pt1.morton_id == pt2.morton_id)
-            {
-                if (pt1.id == pt2.id)
-                {
+        auto pt_cmp = [&](auto &pt1, auto &pt2){
+            if (pt1.morton_id == pt2.morton_id){
+                if (pt1.id == pt2.id){
                     return 0;
                 }
-                else
-                {
+                else{
                     if (pt1.id < pt2.id)
                         return 1;
                     else
                         return 2;
                 }
             }
-            else
-            {
+            else {
                 if (pt1.morton_id < pt2.morton_id)
                     return 1;
                 else
@@ -714,31 +681,24 @@ namespace geobase
             }
         };
         size_t i = 0, j = l, cnt = 0;
-        while (i < lhs.size() && j < r)
-        {
+        while (i < lhs.size() && j < r){
             auto flag = pt_cmp(lhs[i], P[j]);
-            if (!flag)
-            { // point should be deleted
+            if (!flag){ // point should be deleted
                 i++, j++;
             }
-            else if (flag == 1)
-            { // first smaller, in A not in B
-                if (!f(lhs[i]))
-                {
+            else if (flag == 1){ // first smaller, in A not in B
+                if (!f(lhs[i])){
                     i++;
                     continue;
                 }
                 parlay::assign_uninitialized(ret[cnt++], lhs[i++]);
             }
-            else
-            { //  second smaller, in B not in A
+            else{ //  second smaller, in B not in A
                 j++;
             }
         }
-        while (i < lhs.size())
-        {
-            if (!f(lhs[i]))
-            {
+        while (i < lhs.size()){
+            if (!f(lhs[i])){
                 i++;
                 continue;
             }

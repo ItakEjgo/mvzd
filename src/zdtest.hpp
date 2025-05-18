@@ -53,26 +53,42 @@ namespace CPAMBB{
 			parlay::sequence<size_t> addCnt(range_queries.size());
 			parlay::sequence<size_t> removeCnt(range_queries.size());
 
-			auto avg_time = time_loop(
-				3, 1.0,
-				[&](){},
-				[&](){
-					for (size_t i = 0; i < range_queries.size(); i++){
-						// print_mbr(range_queries[i]);
+			auto l_pts = parlay::sequence<Point>::uninitialized(2 * maxSize);
+			auto r_pts = parlay::sequence<Point>::uninitialized(2 * maxSize);
+
+			for (size_t i = 0; i < range_queries.size(); i++){
+				auto avg_time = time_loop(
+					3, 1.0,
+					[&](){},
+					[&](){
 						diff_type ret_diff(maxSize, maxSize);
-						auto l_pts = parlay::sequence<Point>::uninitialized(2 * maxSize);
-						auto r_pts = parlay::sequence<Point>::uninitialized(2 * maxSize);
 						CPAMBB::plain_map_spatial_diff(cpambb0, cpambb1, range_queries[i], ret_diff, l_pts, r_pts);
 						ret_diff.compact();
-						// print_Pset_info(ret_diff.add, "add");
-						// print_Pset_info(ret_diff.remove, "remove");
 						addCnt[i] = ret_diff.add.size();
 						removeCnt[i] = ret_diff.remove.size();
-					}
-				},
-				[&]{}
-			);
-			cout << fixed << setprecision(6) << "[cpambb-plain] spatial-diff time (avg): " << avg_time << endl;
+					},
+					[&]{}
+				);
+				cout << fixed << setprecision(6) << i << " " << avg_time << endl;
+			}
+
+			// auto avg_time = time_loop(
+			// 	3, 1.0,
+			// 	[&](){},
+			// 	[&](){
+			// 		for (size_t i = 0; i < range_queries.size(); i++){
+			// 			diff_type ret_diff(maxSize, maxSize);
+			// 			auto l_pts = parlay::sequence<Point>::uninitialized(2 * maxSize);
+			// 			auto r_pts = parlay::sequence<Point>::uninitialized(2 * maxSize);
+			// 			CPAMBB::plain_map_spatial_diff(cpambb0, cpambb1, range_queries[i], ret_diff, l_pts, r_pts);
+			// 			ret_diff.compact();
+			// 			addCnt[i] = ret_diff.add.size();
+			// 			removeCnt[i] = ret_diff.remove.size();
+			// 		}
+			// 	},
+			// 	[&]{}
+			// );
+			// cout << fixed << setprecision(6) << "[cpambb-plain] spatial-diff time (avg): " << avg_time << endl;
 			#ifdef TEST
 				string file_name = "output/cpambb_spatial_diff_plain-" + to_string(batch_size); 
 				ofstream spatialDiffOut(file_name);
@@ -107,23 +123,43 @@ namespace CPAMBB{
         	parlay::sequence<size_t> addCnt(range_queries.size());
         	parlay::sequence<size_t> removeCnt(range_queries.size());
 
-        	auto avg_time = time_loop(
-            	3, 1.0,
-            	[&](){},
-            	[&](){
-                	for (size_t i = 0; i < range_queries.size(); i++){
-						diff_type ret_diff(maxSize, maxSize);
-						auto l_pts = parlay::sequence<Point>::uninitialized(2 * maxSize);
-						auto r_pts = parlay::sequence<Point>::uninitialized(2 * maxSize);
-						CPAMBB::plain_map_spatial_diff(cpambb0, cpambb2, range_queries[i], ret_diff, l_pts, r_pts);
-						ret_diff.compact();
-						addCnt[i] = ret_diff.add.size();
-						removeCnt[i] = ret_diff.remove.size();
-                	}
-            	},
-            	[&]{}
-        	);
-        	cout << fixed << setprecision(6) << "[cpambb] spatial-diff time (avg): " << avg_time << endl;
+			auto l_pts = parlay::sequence<Point>::uninitialized(2 * maxSize);
+			auto r_pts = parlay::sequence<Point>::uninitialized(2 * maxSize);
+			for (size_t i = 0; i < range_queries.size(); i++){
+				auto avg_time = time_loop(
+					3, 1.0,
+					[&](){},
+					[&](){
+						// for (size_t i = 0; i < range_queries.size(); i++){
+							diff_type ret_diff(maxSize, maxSize);
+							CPAMBB::plain_map_spatial_diff(cpambb0, cpambb2, range_queries[i], ret_diff, l_pts, r_pts);
+							ret_diff.compact();
+							addCnt[i] = ret_diff.add.size();
+							removeCnt[i] = ret_diff.remove.size();
+						// }
+					},
+					[&]{}
+				);
+				cout << fixed << setprecision(6) << i << " " << avg_time << endl;
+			}
+        	// auto avg_time = time_loop(
+            // 	3, 1.0,
+            // 	[&](){},
+            // 	[&](){
+            //     	for (size_t i = 0; i < range_queries.size(); i++){
+			// 			diff_type ret_diff(maxSize, maxSize);
+			// 			auto l_pts = parlay::sequence<Point>::uninitialized(2 * maxSize);
+			// 			auto r_pts = parlay::sequence<Point>::uninitialized(2 * maxSize);
+			// 			CPAMBB::plain_map_spatial_diff(cpambb0, cpambb2, range_queries[i], ret_diff, l_pts, r_pts);
+			// 			ret_diff.compact();
+			// 			addCnt[i] = ret_diff.add.size();
+			// 			removeCnt[i] = ret_diff.remove.size();
+            //     	}
+            // 	},
+            // 	[&]{}
+        	// );
+        	// cout << fixed << setprecision(6) << "[cpambb] spatial-diff time (avg): " << avg_time << endl;
+			
         
 			#ifdef TEST
         		string file_name = "output/cpambb_spatial_diff-" + to_string(batch_size); 
@@ -528,82 +564,82 @@ namespace CPAMBB{
 
 
 	template<class PT, class RQ>
-    void range_report_test(PT P, RQ querys, parlay::sequence<size_t> &cnt, bool use_hilbert = false){
+    void range_report_test(PT P, RQ querys, parlay::sequence<size_t> &cnt, bool use_hilbert = false, size_t par_for_granularity = 100){
 	    auto tree = CPAMBB::map_init(P, use_hilbert);
 
-		parlay::sequence<Bounding_Box> q2(querys.size());
+		// parlay::sequence<Bounding_Box> q2(querys.size());
 		parlay::sequence<size_t> rangeCnt(querys.size());
 		parlay::sequence<parlay::sequence<Point> > rangeReport(querys.size());
 		for (size_t i = 0; i < querys.size(); i++){
 			rangeReport[i].resize(cnt[i]);
 		}
 
-		size_t tot_inte = 0, tot_leaf = 0;
-		double tot_time = 0;
+		// size_t tot_inte = 0, tot_leaf = 0; double tot_time = 0;
 		// for (size_t i = 0; i < querys.size(); i++){
-			auto avg_time = time_loop(
-				3, 1.0, 
-				[&]() {
-					tot_inte = 0;
-					tot_leaf = 0;
-				},
-				[&]() {					
-					// for (size_t i = 0; i < querys.size(); i++){
-					parlay::parallel_for(0, querys.size(), [&](size_t i){
-						// visited_inte = 0;
-						// visited_leaf = 0;
-						rangeCnt[i] = CPAMBB::range_report(tree, querys[i], rangeReport[i], use_hilbert);
-						// tot_inte += visited_inte;
-						// tot_leaf += visited_leaf;
-					});
-					// }
-				},
-				[&](){} 
-			);
-			parlay::parallel_for(0, querys.size(), [&](size_t i){
-				q2[i] = Bounding_Box(rangeReport[i][0], rangeReport[i][0]);
-			});
+		auto avg_time = time_loop(
+			3, 1.0, 
+			[&]() {},
+			[&]() {					
+				// for (size_t i = 0; i < querys.size(); i++){
+				parlay::parallel_for(0, querys.size(), [&](size_t i){
+					rangeCnt[i] = CPAMBB::range_report(tree, querys[i], rangeReport[i], use_hilbert);
+					// rangeCnt[i] = CPAMBB::range_report(tree, querys[(i + 233) % querys.size()], rangeReport[(i + 233) % querys.size()], use_hilbert);
+					// rangeCnt[i] = CPAMBB::range_report(tree, querys[(i + 666) % querys.size()], rangeReport[(i + 666) % querys.size()], use_hilbert);
+					// rangeCnt[i] = CPAMBB::range_report(tree, querys[(i + 123) % querys.size()], rangeReport[(i + 123) % querys.size()], use_hilbert);
+					// rangeCnt[i] = CPAMBB::range_report(tree, querys[(i + 321) % querys.size()], rangeReport[(i + 321) % querys.size()], use_hilbert);
+					// rangeCnt[i] = CPAMBB::range_report(tree, querys[(i + 777) % querys.size()], rangeReport[(i + 777) % querys.size()], use_hilbert);
+					// rangeCnt[i] = CPAMBB::range_report(tree, querys[(i + 555) % querys.size()], rangeReport[(i + 555) % querys.size()], use_hilbert);
+					// rangeCnt[i] = CPAMBB::range_report(tree, querys[(i + 12) % querys.size()], rangeReport[(i + 12) % querys.size()], use_hilbert);
+					// rangeCnt[i] = CPAMBB::range_report(tree, querys[(i + 6) % querys.size()], rangeReport[(i + 6) % querys.size()], use_hilbert);
+					// rangeCnt[i] = CPAMBB::range_report(tree, querys[(i + 88) % querys.size()], rangeReport[(i + 88) % querys.size()], use_hilbert);
+					// rangeCnt[i] = CPAMBB::range_report(tree, querys[(i + 100) % querys.size()], rangeReport[(i + 100) % querys.size()], use_hilbert);
+					// rangeCnt[i] = CPAMBB::range_report(tree, querys[i], rangeReport[i], use_hilbert);
+					// tot_inte += visited_inte;
+					// tot_leaf += visited_leaf;
+				});
+				// }
+			},
+			[&](){} 
+		);
+
+		if (use_hilbert) cout << "[Hilbert-CPAMBB]: ";
+		else cout << "[CPAMBB]: ";
+		cout << fixed << setprecision(6) << "range report time (avg): " << avg_time << endl;
+
+			// parlay::parallel_for(0, querys.size(), [&](size_t i){
+			// 	q2[i] = Bounding_Box(rangeReport[i][0], rangeReport[i][0]);
+			// });
 			// tot_inte += visited_inte, tot_leaf += visited_leaf;
 			// print_mbr(querys[i]);
 			// cout << "[INFO] visited inte: " << visited_inte << endl;
 			// cout << "[INFO] visited leaf: " << visited_leaf << endl;
 			// cout << "[INFO] cnt = " << rangeCnt[i] << endl;
 			// cout << "[INFO] query " << i << " time: " << fixed << setprecision(6) << avg_time << endl;
-			cout << "[INFO] totoal visited inte: " << tot_inte << endl;
-			cout << "[INFO] totoal visited leaf: " << tot_leaf << endl;
-			cout << "[INFO] tot query time: " << fixed << setprecision(6) << avg_time << endl;
-			tot_time += avg_time;
+			// cout << "[INFO] totoal visited inte: " << tot_inte << endl;
+			// cout << "[INFO] totoal visited leaf: " << tot_leaf << endl;
+			// cout << "[INFO] tot query time: " << fixed << setprecision(6) << avg_time << endl;
+			// tot_time += avg_time;
 
-			avg_time = time_loop(
-				3, 1.0, 
-				[&]() {
-					tot_inte = 0;
-					tot_leaf = 0;
-				},
-				[&]() {					
-					// for (size_t i = 0; i < querys.size(); i++){
-					parlay::parallel_for(0, querys.size(), [&](size_t i){
-						// visited_inte = 0;
-						// visited_leaf = 0;
-						rangeCnt[i] = CPAMBB::range_report(tree, q2[i], rangeReport[i], use_hilbert);
-						// tot_inte += visited_inte;
-						// tot_leaf += visited_leaf;
-					});
-					// }
-				},
-				[&](){} 
-			);
-			cout << "---------------------Single Point Query-------------------" << endl;
-			cout << "[INFO] totoal visited inte: " << tot_inte << endl;
-			cout << "[INFO] totoal visited leaf: " << tot_leaf << endl;
-			cout << "[INFO] tot query time: " << fixed << setprecision(6) << avg_time << endl;
+		/* range report sample test. */
+		// for (size_t i = 0; i < querys.size(); i++){
+		// 	auto avg_time = time_loop(
+		// 		3, 1.0, 
+		// 		[&]() {
+		// 		},
+		// 		[&]() {					
+		// 			rangeCnt[i] = CPAMBB::range_report(tree, querys[i], rangeReport[i], use_hilbert);
+		// 		},
+		// 		[&](){} 
+		// 	);
 
-			// if (rangeCnt[i] != cnt[i]){
-			// 	cout << "[ERROR] Incorrect" << endl;
-			// }
-			// else{
-			// 	cout << fixed << setprecision(6) << rangeCnt[i] << " " << avg_time << endl;
-			// }
+		// 	if (rangeCnt[i] != cnt[i]){
+		// 		cout << "[ERROR] Incorrect" << rangeCnt[i] << " " << cnt[i] << endl;
+		// 	}
+		// 	else{
+		// 		cout << fixed << setprecision(6) << rangeCnt[i] << " " << avg_time << endl;
+		// 	}
+		// }
+
 		// }
 		// cout << "[INFO] totoal visited inte: " << tot_inte << endl;
 		// cout << "[INFO] totoal visited leaf: " << tot_leaf << endl;
@@ -690,7 +726,7 @@ namespace CPAMBB{
 		// 			0, q_num,
 		// 			[&]( size_t i ) {
 		//     			knn_sqrdis[i] = CPAMBB::knn(tree, P[i], k).top().second;
-		// 		});
+		// 		});`
 		// 	},
 		// [&](){} );
 
@@ -726,7 +762,9 @@ namespace CPAMBB{
 	    	});
 			bool print_flag = true;
 	    	auto cpam_insert_avg = time_loop(
-		    	3, 1.0, [&]() {},
+		    	3, 1.0, [&]() {
+					m2.clear();
+				},
 		    	[&]() {
 					m2 = CPAMBB::map_insert(P2, m1, use_hilbert);
 		    	},
@@ -757,7 +795,9 @@ namespace CPAMBB{
 			bool print_flag = true;
 
 	    	auto cpam_insert_avg = time_loop(
-		    	3, 1.0, [&]() {},
+		    	3, 1.0, [&]() {
+					m2.clear();
+				},
 		    	[&]() {
 					m2 = CPAMBB::map_delete(P2, m1, use_hilbert);
 		    	},
@@ -1129,7 +1169,9 @@ namespace CPAMZ{
 
 			bool print_flag = true;
 	    	auto cpam_insert_avg = time_loop(
-		    	3, 1.0, [&]() {},
+		    	3, 1.0, [&]() {
+					m2.clear();
+				},
 		    	[&]() {
 					m2 = Morton::CPAMZ_insert(P2, m1, use_hilbert);
 		    	},
@@ -1168,7 +1210,9 @@ namespace CPAMZ{
 
 			bool print_flag = true;
 	    	auto cpam_insert_avg = time_loop(
-		    	3, 1.0, [&]() {},
+		    	3, 1.0, [&]() {
+					m2.clear();
+				},
 		    	[&]() {
 					m2 = Morton::CPAMZ_delete(P2, m1, use_hilbert);
 		    	},
@@ -1354,35 +1398,25 @@ namespace ZDTest{
 			// parlay::sequence<size_t> pts1Cnt(range_queries.size());
 			// parlay::sequence<size_t> pts2Cnt(range_queries.size());
 			// map<size_t, size_t> pts_map, diff_map;
-	
-			auto avg_time = time_loop(
-				3, 1.0,
-				[&](){
-				},
-				[&](){
-					for (size_t i = 0; i < range_queries.size(); i++){
-						auto pts1 = parlay::sequence<Point>::uninitialized(2 * maxSize); 
-						auto pts2 = parlay::sequence<Point>::uninitialized(2 * maxSize); 
+
+			auto pts1 = parlay::sequence<Point>::uninitialized(2 * maxSize); 
+			auto pts2 = parlay::sequence<Point>::uninitialized(2 * maxSize); 
+			for (size_t i = 0; i < range_queries.size(); i++){
+				auto avg_time = time_loop(
+					3, 1.0,
+					[&](){},
+					[&](){
 						if (!dual_traverse){
-							// print_mbr(range_queries[i]);
 							size_t cnt1 = 0, cnt2 = 0;
 							zdtree.range_report(range_queries[i], largest_mbr, cnt1, pts1);
 							pts1.resize(cnt1);
 							newtree.range_report(range_queries[i], largest_mbr, cnt2, pts2);
 							pts2.resize(cnt2);
-							// print_Pset_info(pts1, "pts1");
-							// print_Pset_info(pts2, "pts2");
-							// pts_map[cnt1]++;
-							// pts_map[cnt2]++;
 							diff_type ret_diff(maxSize, maxSize);
 							merge_pts(pts1, pts2, ret_diff);
-							// print_Pset_info(add, "add");
-							// print_Pset_info(remove, "remove");
 							ret_diff.compact();
 							addCnt[i] = ret_diff.add.size();
 							removeCnt[i] = ret_diff.remove.size();
-							// diff_map[addCnt[i]]++;
-							// diff_map[removeCnt[i]]++;
 						}
 						else{
 							diff_type ret_diff(maxSize, maxSize);
@@ -1391,25 +1425,49 @@ namespace ZDTest{
 							addCnt[i] = ret_diff.add.size();
 							removeCnt[i] = ret_diff.remove.size();
 						}
-					}
-				},
-				[&]{}
-			);
-			if (!dual_traverse){
-				cout << fixed << setprecision(6) << "[zdtree-plain] spatial-diff time (avg): " << avg_time << endl;
+					},
+					[&]{}
+				);
+				cout << fixed << setprecision(6) << i << " " << avg_time << endl;
 			}
-			else{
-				cout << fixed << setprecision(6) << "[zdtree-plain-dual] spatial-diff time (avg): " << avg_time << endl;
-			}
-			// cout << "---------------------------Splitter------------------------------" << endl;
-			// cout << "range query ret size: " << endl;
-			// for (auto &par: pts_map){
-			// 	cout << par.first << " " << par.second << endl;
+			
+	
+			// auto avg_time = time_loop(
+			// 	3, 1.0,
+			// 	[&](){
+			// 	},
+			// 	[&](){
+			// 		for (size_t i = 0; i < range_queries.size(); i++){
+			// 			auto pts1 = parlay::sequence<Point>::uninitialized(2 * maxSize); 
+			// 			auto pts2 = parlay::sequence<Point>::uninitialized(2 * maxSize); 
+			// 			if (!dual_traverse){
+			// 				size_t cnt1 = 0, cnt2 = 0;
+			// 				zdtree.range_report(range_queries[i], largest_mbr, cnt1, pts1);
+			// 				pts1.resize(cnt1);
+			// 				newtree.range_report(range_queries[i], largest_mbr, cnt2, pts2);
+			// 				pts2.resize(cnt2);
+			// 				diff_type ret_diff(maxSize, maxSize);
+			// 				merge_pts(pts1, pts2, ret_diff);
+			// 				ret_diff.compact();
+			// 				addCnt[i] = ret_diff.add.size();
+			// 				removeCnt[i] = ret_diff.remove.size();
+			// 			}
+			// 			else{
+			// 				diff_type ret_diff(maxSize, maxSize);
+			// 				zdtree.spatial_two_version_diff(zdtree.root, newtree.root, range_queries[i], largest_mbr, ret_diff);
+			// 				ret_diff.compact();
+			// 				addCnt[i] = ret_diff.add.size();
+			// 				removeCnt[i] = ret_diff.remove.size();
+			// 			}
+			// 		}
+			// 	},
+			// 	[&]{}
+			// );
+			// if (!dual_traverse){
+			// 	cout << fixed << setprecision(6) << "[zdtree-plain] spatial-diff time (avg): " << avg_time << endl;
 			// }
-			// cout << "---------------------------Splitter------------------------------" << endl;
-			// cout << "spatial diff ret size: " << endl;
-			// for (auto &par: diff_map){
-			// 	cout << par.first << " " << par.second << endl;
+			// else{
+			// 	cout << fixed << setprecision(6) << "[zdtree-plain-dual] spatial-diff time (avg): " << avg_time << endl;
 			// }
 			
 			#ifdef TEST
@@ -1439,6 +1497,8 @@ namespace ZDTest{
         auto [P_insert_set, P_delete_set] = geobase::split_insert_delete(P_test, insert_ratio, P.size());
 		
 		for (auto &batch_size: batch_sizes){
+			if (batch_size > P.size()) batch_size = P.size();
+
 			cout << "[INFO] Batch Size: " << batch_size << endl;
 			auto insert_num = batch_size / 10 * insert_ratio;
 			auto delete_num = batch_size / 10 * (10 - insert_ratio);
@@ -1458,27 +1518,45 @@ namespace ZDTest{
 			parlay::sequence<size_t> removeCnt(range_queries.size());
 
 			diff_type ret_diff(maxSize, maxSize);
-			auto avg_time = time_loop(
-				3, 1.0,
-				[&](){},
-				[&](){
-					for (size_t i = 0; i < range_queries.size(); i++){
-						// cout << "processing: " << i << endl;
-						// print_mbr(range_queries[i]);
-						// auto[add, remove] = zdtree.spatial_two_version_diff(zdtree.root, new_ver2, range_queries[i], largest_mbr);
+
+			for (size_t i = 0; i < range_queries.size(); i++){
+				auto avg_time = time_loop(
+					3, 1.0,
+					[&](){},
+					[&](){
 						ret_diff.reset(maxSize, maxSize);
 						zdtree.spatial_two_version_diff(zdtree.root, new_ver2, range_queries[i], largest_mbr, ret_diff);
 						ret_diff.add.resize(ret_diff.add_cnt);
 						ret_diff.remove.resize(ret_diff.remove_cnt);
-						// print_Pset_info(ret_diff.add, "add");
-						// print_Pset_info(ret_diff.remove, "remove");
 						addCnt[i] = ret_diff.add.size();
 						removeCnt[i] = ret_diff.remove.size();
-					}
-				},
-				[&]{}
-			);
-			cout << fixed << setprecision(6) << "[zdtree] spatial-diff time (avg): " << avg_time << endl;
+					},
+					[&]{}
+				);
+				cout << fixed << setprecision(6) << i << " " << avg_time << endl;
+			}
+
+			// auto avg_time = time_loop(
+			// 	3, 1.0,
+			// 	[&](){},
+			// 	[&](){
+			// 		for (size_t i = 0; i < range_queries.size(); i++){
+			// 			// cout << "processing: " << i << endl;
+			// 			// print_mbr(range_queries[i]);
+			// 			// auto[add, remove] = zdtree.spatial_two_version_diff(zdtree.root, new_ver2, range_queries[i], largest_mbr);
+			// 			ret_diff.reset(maxSize, maxSize);
+			// 			zdtree.spatial_two_version_diff(zdtree.root, new_ver2, range_queries[i], largest_mbr, ret_diff);
+			// 			ret_diff.add.resize(ret_diff.add_cnt);
+			// 			ret_diff.remove.resize(ret_diff.remove_cnt);
+			// 			// print_Pset_info(ret_diff.add, "add");
+			// 			// print_Pset_info(ret_diff.remove, "remove");
+			// 			addCnt[i] = ret_diff.add.size();
+			// 			removeCnt[i] = ret_diff.remove.size();
+			// 		}
+			// 	},
+			// 	[&]{}
+			// );
+			// cout << fixed << setprecision(6) << "[zdtree] spatial-diff time (avg): " << avg_time << endl;
 			
 			#ifdef TEST
 				string file_name = "output/zd_spatial_diff-" + to_string(batch_size); 
@@ -1602,25 +1680,16 @@ namespace ZDTest{
 		parlay::sequence<size_t> addCnt(range_queries.size());
 		parlay::sequence<size_t> removeCnt(range_queries.size());
 
-		auto rand_p = shuffle_point(P);
-
-		// parlay::sequence<Point> ret;
-
 		for (auto &batch_size: batch_sizes){
 			if (batch_size > P.size()) break;
 			cout << "[batch-size]: " << batch_size << endl;
 
-			auto modified_p = rand_p.substr(0, batch_size);
-
-			auto insert_num = batch_size * 3 / 10;	//	0.3 insert
-			auto delete_num = batch_size - insert_num;	//	0.7 delete
-
-			auto P_insert = modified_p.substr(0, insert_num);
+			auto P_insert = P.substr(0, batch_size);
 			parlay::parallel_for(0, P_insert.size(), [&](size_t j){
 				P_insert[j].id += P.size();
 			});
 
-			auto P_delete = modified_p.substr(modified_p.size() - delete_num, delete_num);
+			auto P_delete = P.substr(P.size() - batch_size, batch_size);
 
 			// get version 1 by deletion
 			auto P_delete_sorted = get_sorted_points(P_delete);
@@ -1630,6 +1699,7 @@ namespace ZDTest{
 			auto P_insert_sorted = get_sorted_points(P_insert);
 			auto new_ver2 = zdtree.multi_version_batch_insert_sorted(P_insert_sorted, zdtree.root);
 
+			// cout << P_insert.size() << ", " << P_delete.size() << endl;
 			// cout << zdtree.collect_records(new_ver).size() << ", " << zdtree.collect_records(new_ver2).size() << endl;
 
 			// for (size_t i = 0; i < range_queries.size(); i++){
@@ -1645,19 +1715,19 @@ namespace ZDTest{
 			// 	cout << fixed << setprecision(6) << diff_avg << endl;
 			// }
 
-	    	auto diff_avg = time_loop(
-		    	3, 1.0, [&]() {},
-		    	[&]() {
-					parlay::parallel_for(0, range_queries.size(), [&](int i){
-						auto[add, remove] = zdtree.spatial_two_version_diff(new_ver, new_ver2, range_queries[i], largest_mbr);
-						addCnt[i] = add.size();
-						removeCnt[i] = remove.size();
-						// ret = add;
-					});
-		    	},
-	    		[&](){} 
-			);
-			cout << fixed << setprecision(6) << "[zdtree]: spatial diff time (avg): " << diff_avg << endl;
+	    	// auto diff_avg = time_loop(
+		    // 	3, 1.0, [&]() {},
+		    // 	[&]() {
+			// 		parlay::parallel_for(0, range_queries.size(), [&](int i){
+			// 			auto[add, remove] = zdtree.spatial_two_version_diff(new_ver, new_ver2, range_queries[i], largest_mbr);
+			// 			addCnt[i] = add.size();
+			// 			removeCnt[i] = remove.size();
+			// 			// ret = add;
+			// 		});
+		    // 	},
+	    	// 	[&](){} 
+			// );
+			// cout << fixed << setprecision(6) << "[zdtree]: spatial diff time (avg): " << diff_avg << endl;
 
 			// cout << "[INFO] add set size, P_insert size: " << add.size() << ", " << P_insert.size() << endl;
 			// cout << "[INFO] remove set size, P_delete size: " << remove.size() << ", " << P_delete.size() << endl;
@@ -1670,7 +1740,9 @@ namespace ZDTest{
 		    		},
 	    			[&](){} 
 				);
-			
+
+				// cout << "init size = " << zdtree.collect_records(zdtree.root).size() << endl;
+				// cout << "commit size = " << zdtree.collect_records(commit_ver).size() << endl;
 				// cout << "commit finished." << endl;
 
 				decltype(zdtree.root) merge_ver;
@@ -2309,10 +2381,15 @@ namespace ZDTest{
 
 			bool print_flag = true;
 	    	auto zdtree_insert_avg = time_loop(
-		    	3, 1.0, [&]() {},
+		    	3, 1.0, [&]() {
+					new_ver.reset();
+				},
 		    	[&]() {
+					parlay::internal::timer t("debug", true);
 			    	P_set = get_sorted_points(P2);
+					t.next("sort time");
 			    	new_ver = zdtree.multi_version_batch_insert_sorted(P_set, zdtree.root);
+					t.next("insert time");
 		    	},
 	    	[&](){
 				if (print_flag){
@@ -2342,19 +2419,20 @@ namespace ZDTest{
 			// bool print_flag = true;
 	    	auto zdtree_delete_avg = time_loop(
 		    	3, 1.0, [&]() {
-					zdtree.visited_leaf = 0;
-					zdtree.visited_inte = 0;
-					zd_leaf_copy_time = 0.0;
-					zd_inte_copy_time = 0.0;
+					new_ver.reset();
+					// zdtree.visited_leaf = 0;
+					// zdtree.visited_inte = 0;
+					// zd_leaf_copy_time = 0.0;
+					// zd_inte_copy_time = 0.0;
 					// cout << "before size: " << zdtree.collect_records(zdtree.root).size() << endl;
 				},
 		    	[&]() {
+					parlay::internal::timer t("debug", false);
 			    	// P_set = get_sorted_address(P2);
-					// parlay::internal::timer t("test");
 			    	P_set = get_sorted_points(P2);
-					// t.next("sort time");
+					t.next("sort time");
 			    	new_ver = zdtree.multi_version_batch_delete_sorted(P_set, zdtree.root);
-					// t.next("delete time");
+					t.next("delete time");
 		    	},
 	    	[&](){
 				// cout << "after size: " << zdtree.collect_records(zdtree.root).size() << endl;
@@ -2666,15 +2744,14 @@ namespace ZDTest{
 		auto knnReport_avg = time_loop(
 			3, 1.0, [&]() {},
 			[&]() {
-				// for (auto i = 0; i < q_num; i++){
-				// 	cout << "query " << i << " finished."  << endl;
-				// 	knn_sqrdis[i] = zdtree.knn_report(k, P[i], largest_mbr).top().second;
-				// }
-				parlay::parallel_for(
-					0, q_num,
-					[&]( size_t i ) {
-						knn_sqrdis[i] = zdtree.knn_report(k, P[i], largest_mbr).top().second;
-				});
+				for (size_t i = 0; i < q_num; i++){
+					knn_sqrdis[i] = zdtree.knn_report(k, P[i], largest_mbr).top().second;
+				}
+				// parlay::parallel_for(
+				// 	0, q_num,
+				// 	[&]( size_t i ) {
+				// 		knn_sqrdis[i] = zdtree.knn_report(k, P[i], largest_mbr).top().second;
+				// });
 			},
 		[&](){} );
 		cout << fixed << setprecision(6) << "[zdtree] knn report time (avg): " << knnReport_avg << endl;

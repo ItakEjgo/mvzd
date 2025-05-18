@@ -138,6 +138,7 @@ namespace ZDTree{
 
 		void gc_nocheck(shared_ptr<BaseNode> &x);
 		void garbage_collect(shared_ptr<BaseNode> &base, shared_ptr<BaseNode> &x);
+        void garbage_collect(shared_ptr<BaseNode> &base, shared_ptr<BaseNode> &new_ver, shared_ptr<BaseNode> &x);
 
 		void clear();
 
@@ -240,7 +241,6 @@ namespace ZDTree{
 		auto knn_report(size_t &k, Point query_point, Bounding_Box &cur_mbr);
     };
 
-
     // //	filter inserted points, deleted points, and updated points from add and remove sets. The updated points contain the new coordinates
 	// auto Tree::filter_diff_results(sequence<Point> &add, sequence<Point> &remove){
 	// 	auto id_cmp = [&](auto lhs, auto rhs){ return lhs.id < rhs.id; };
@@ -340,19 +340,23 @@ namespace ZDTree{
 	}
 
 	auto Tree::commit(shared_ptr<BaseNode> &old_version, sequence<Point> &P_insert, sequence<Point> &P_delete){
-		// parlay::internal::timer t("debug", false);
+		parlay::internal::timer t("zdtree breakdown", true);
 		auto P_set = get_sorted_points(P_delete);
-		auto tmp_ver = multi_version_batch_delete_sorted(P_set, old_version);
+
+		// auto tmp_ver = multi_version_batch_delete_sorted(P_set, old_version);
+		// auto new_ver = multi_version_batch_insert_sorted(P_set, tmp_ver);
+		// gc_nocheck(tmp_ver);
+
 		// cout << "base version size: " << collect_records(old_version).size() << endl;
-		// t.next("delete time");
+		auto new_ver = multi_version_batch_delete_sorted(P_set, old_version);
+		t.next("delete time");
 		P_set = get_sorted_points(P_insert);
-		auto new_ver = multi_version_batch_insert_sorted(P_set, tmp_ver);
-		// cout << "base version size: " << collect_records(old_version).size() << endl;
-		// t.next("insert time");
-		garbage_collect(old_version, tmp_ver);
-		// tmp_ver.reset();
+		new_ver = multi_version_batch_insert_sorted(P_set, new_ver);
+		t.next("insert time");
+
 		// t.next("garbage-collect time");
 		// cout << "base version size: " << collect_records(old_version).size() << endl;
+
 		return new_ver;
 	}
 
@@ -786,13 +790,13 @@ namespace ZDTree{
 			x.reset();
 			return;
 		}
-			
-		auto cur_inte = static_cast<InteNode*>(x.get());
-		auto gc_left = [&](){ gc_nocheck(cur_inte->l_son); };
-		auto gc_right = [&](){	gc_nocheck(cur_inte->r_son); };
-		par_do_if(x->get_num_points() > granularity_cutoff,
-			gc_left, gc_right);
 
+		auto cur_inte = static_cast<InteNode*>(x.get());
+		if (x.use_count() == 1){
+			auto gc_left = [&](){ gc_nocheck(cur_inte->l_son); }; 
+			auto gc_right = [&](){gc_nocheck(cur_inte->r_son); };
+			par_do_if(x->get_num_points() > granularity_cutoff, gc_left, gc_right);
+		}
 		x.reset();
 	}
 
@@ -805,17 +809,53 @@ namespace ZDTree{
 		
 		if (!base || base->is_leaf()){	//	base is null or leaf, just garbage_collect all nodes in x.
 			gc_nocheck(x);
+			return;
 		}
 
 		auto base_inte =static_cast<InteNode*>(base.get()); 
 		auto cur_inte = static_cast<InteNode*>(x.get());
 
-		auto gc_left = [&](){ garbage_collect(base_inte->l_son, cur_inte->l_son); };
-		auto gc_right = [&](){	garbage_collect(base_inte->r_son, cur_inte->r_son); };
+		if (x->get_num_points() > granularity_cutoff){
+			auto gc_left = [&](){ garbage_collect(base_inte->l_son, cur_inte->l_son); };
+			auto gc_right = [&](){	garbage_collect(base_inte->r_son, cur_inte->r_son); };
+			par_do(gc_left, gc_right); 
+		}
+		x.reset();
+	}
 
-		par_do_if(x->get_num_points() >= granularity_cutoff,
-			gc_left, gc_right); 
+
+	void Tree::garbage_collect(shared_ptr<BaseNode> &base, shared_ptr<BaseNode> &new_ver, shared_ptr<BaseNode> &x){
+		if (!x || x == base || x == new_ver) {
+			cout << "[DEBUG] reused node found" << endl;
+			return;
+		}
+
+		if (x->is_leaf()){
+			cout << "[DEBUG] freed node found" << endl;
+			x.reset();
+			return;
+		}
 		
+		if (!base || base->is_leaf()){	//	base is null or leaf, garbage collect based on x and new_ver.
+			cout << "[DEBUG] go to new_ver-x" << endl;
+			garbage_collect(new_ver, x);
+			return;
+		}
+		else if (!new_ver || new_ver->is_leaf()){	//	new_ver is null or leaf, garbage collect based on x and base.
+			cout << "[DEBUG] go to base-x" << endl;
+			garbage_collect(base, x);
+			return;
+		}
+		
+		auto base_inte =static_cast<InteNode*>(base.get()); 
+		auto cur_inte = static_cast<InteNode*>(x.get());
+		auto newver_inte = static_cast<InteNode*>(new_ver.get());
+
+		if (x->get_num_points() > granularity_cutoff){
+			auto gc_left = [&](){ garbage_collect(base_inte->l_son, cur_inte->l_son, newver_inte->l_son); };
+			auto gc_right = [&](){	garbage_collect(base_inte->r_son, cur_inte->r_son, newver_inte->r_son); };
+			par_do(gc_left, gc_right); 
+		}
 		x.reset();
 	}
 
@@ -838,39 +878,21 @@ namespace ZDTree{
 			auto cur_records = parlay::make_slice(&P[l], &P[r]);
 			if (!b || cur_leaf->records.size() + cur_records.size() <= leaf_size){	// current leaf is not full
 				cur_leaf->records = parlay::merge(cur_leaf->records, parlay::make_slice(&P[l], &P[r]), less);
-				// cur_leaf->records = geobase::morton_merge(cur_leaf->records, cur_records);
-
-				#ifdef USE_MBR
-				auto cur_mbr = get_mbr(cur_records);
-				cur_leaf->mbr = merge_mbr(cur_leaf->mbr, cur_mbr);
-				#endif
-
 				return;
 			}
 			else{
 				auto new_points = parlay::merge(cur_leaf->records, parlay::make_slice(&P[l], &P[r]), less);
-				// auto new_points = geobase::morton_merge(cur_leaf->records, cur_records);
 				x = build(new_points, 0, new_points.size(), b);
 				return;
 			}
 		}
 		auto splitter = split_by_bit(P, l, r, b);
 		auto cur_inte = static_cast<InteNode*>(x.get());
-		#ifdef SEQ
-		if (l < splitter){
-			batch_insert_sorted_node(cur_inte->l_son, P, l, splitter, b - 1);
-		}
-		if (splitter < r){
-			batch_insert_sorted_node(cur_inte->r_son, P, splitter, r, b - 1);
-		}
-		#else
 		auto insert_left = [&](){ if (l < splitter){ batch_insert_sorted_node(cur_inte->l_son, P, l, splitter, b - 1); }; };
 		auto insert_right = [&](){ if (splitter < r){ batch_insert_sorted_node(cur_inte->r_son, P, splitter, r, b - 1); }; };
 		par_do_if(r - l >= granularity_cutoff,
 			insert_left,
 			insert_right); 
-		#endif
-
 		delete_merge_nodes(cur_inte->l_son, cur_inte->r_son, cur_inte);
 	}
 
@@ -931,8 +953,6 @@ namespace ZDTree{
 	}
 
 	void Tree::multi_version_batch_insert_sorted_node(shared_ptr<BaseNode> &x, sequence<Point> &P, size_t l, size_t r, size_t b){
-		// cout << "current is leaf? " << x->is_leaf() << ", ";
-		// cout << "insert " << r - l << " points, l = " << l << ", r = " << r << ", b = " << b << endl;
 		if (x == nullptr){
 			x = build(P, l, r, b);
 			return;
@@ -946,42 +966,40 @@ namespace ZDTree{
 			auto cur_records = parlay::make_slice(&P[l], &P[r]);
 			if (!b || cur_leaf->records.size() + cur_records.size() <= leaf_size){	// current leaf is not full
 				cur_leaf->records = parlay::merge(cur_leaf->records, parlay::make_slice(&P[l], &P[r]), less);
-				// cur_leaf->records = geobase::morton_merge(cur_leaf->records, cur_records);
+				// cur_leaf->records = parlay::merge(cur_leaf->records, parlay::make_slice(&P[l], &P[r]), less);
 				return;
 			}
 			else{
 				auto new_points = parlay::merge(cur_leaf->records, parlay::make_slice(&P[l], &P[r]), less);
+				// new_points = parlay::merge(cur_leaf->records, parlay::make_slice(&P[l], &P[r]), less);
 				x = build(new_points, 0, new_points.size(), b);
 				return;
 			}
 		}
 		auto splitter = split_by_bit(P, l, r, b);
+		
 		auto cur_inte = static_cast<InteNode*>(x.get());
 		auto new_l_son(cur_inte->l_son);
 		auto new_r_son(cur_inte->r_son);
 
 		auto insert_left = [&](){ 
 			if (l < splitter){ 
-				// cout << "node copy begin" << endl;
 				new_l_son = node_copy(cur_inte->l_son);
-				// cout << "node copy end" << endl;
 				multi_version_batch_insert_sorted_node(new_l_son, P, l, splitter, b - 1);
 			};
 		};
 		auto insert_right = [&](){ 
 			if (splitter < r){ 
-				// cout << "node copy begin" << endl;
 				new_r_son = node_copy(cur_inte->r_son);
-				// cout << "node copy end" << endl;
 				multi_version_batch_insert_sorted_node(new_r_son, P, splitter, r, b - 1); 
 			};
 		};
-
-		par_do_if(r - l >= granularity_cutoff,
+		par_do_if(r - l >= 256,
 			insert_left,
 			insert_right); 
 			
 		delete_merge_nodes(new_l_son, new_r_son, cur_inte);
+		// delete_merge_nodes(new_l_son, new_r_son, cur_inte);
 	}
 
 	shared_ptr<BaseNode> Tree::multi_version_batch_insert_sorted(sequence<Point> &P, shared_ptr<BaseNode> &old_root){
@@ -1048,10 +1066,12 @@ namespace ZDTree{
 			// 	cout << "[Error]" << for_debug.size() << ", " << removed.size() << endl;
 			// }
 
-			if (!cur_leaf->records.size()) x.reset();
+			if (!cur_leaf->records.size()) {
+				x.reset();
+			}
 			return;
 		}
-		visited_inte++;
+		// visited_inte++;
 
 		auto splitter = split_by_bit(P, l, r, b);
 		auto cur_inte = static_cast<InteNode*>(x.get());
@@ -1096,6 +1116,7 @@ namespace ZDTree{
 						auto L = static_cast<LeafNode*>(new_l_son.get());
 						auto R = static_cast<LeafNode*>(new_r_son.get());
 						auto cur_records = parlay::merge(L->records, R->records, less);
+						x = create_leaf(cur_records, 0, cur_records.size(), 0);
 						x = create_leaf(cur_records, 0, cur_records.size(), 0);
 					}
 					else{

@@ -37,7 +37,7 @@ namespace CPAMBB{
 	};
 
 	// using zmap = cpam::aug_map<entry, 32>;
-	using zmap = cpam::aug_map<entry, 32>;
+	using zmap = cpam::aug_map<entry, 16>;
 	using par = std::tuple<entry::key_t, entry::val_t>;
 
 	template<class T, class MBR>
@@ -165,8 +165,11 @@ namespace CPAMBB{
 		};
 
 		int64_t ret = 0;
-		// zmap::range_report_filter(tree, f, ret, out);
-		zmap::range_report_filter2(tree, f, ret, out);
+		// for (auto i = 0; i < 20; i++){
+			// ret = 0;
+			// zmap::range_report_filter(tree, f, ret, out);
+			zmap::range_report_filter2(tree, f, ret, out);
+		// }
 		return ret;
 	}
 
@@ -212,11 +215,11 @@ namespace CPAMBB{
 
 	template<typename PT, typename M>
 	auto map_commit(M &mmp, PT &P_insert, PT &P_delete){
-		// parlay::internal::timer t("debug", true);
+		parlay::internal::timer t("CPAM-BB breakdown", true);
 		auto new_ver = map_delete(P_delete, mmp);	//	new	version
-		// t.next("delete time");
+		t.next("delete time");
 		new_ver = map_insert(P_insert, new_ver); 
-		// t.next("insert time");
+		t.next("insert time");
 		return new_ver;
 	}
 
