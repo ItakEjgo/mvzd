@@ -30,6 +30,7 @@
         "typeindex": "cpp",
         "utility": "cpp",
         "valarray": "cpp",
-        "limits": "cpp"
+        "limits": "cpp",
+        "iostream": "cpp"
     }
 }

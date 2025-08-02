@@ -218,11 +218,11 @@ namespace Morton{
 
 	template<typename PT, typename M>
 	auto CPAMZ_commit(M &mmp, PT &P_insert, PT &P_delete){
-		parlay::internal::timer t("CPAMZ breakdown", true);
+		// parlay::internal::timer t("CPAMZ breakdown", true);
 		auto new_ver = CPAMZ_delete(P_delete, mmp);	//	new	version
-		t.next("delete time");
+		// t.next("delete time");
 		new_ver = CPAMZ_insert(P_insert, new_ver); 
-		t.next("insert time");
+		// t.next("insert time");
 		return new_ver;
 	}
 

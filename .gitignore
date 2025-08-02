@@ -12,6 +12,9 @@
 *.pts
 *.in
 
+# Helper scripts
+*.sh
+
 # Output folders
 exp_res/
 exp_scripts/

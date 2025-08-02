@@ -215,11 +215,11 @@ namespace CPAMBB{
 
 	template<typename PT, typename M>
 	auto map_commit(M &mmp, PT &P_insert, PT &P_delete){
-		parlay::internal::timer t("CPAM-BB breakdown", true);
+		// parlay::internal::timer t("CPAM-BB breakdown", true);
 		auto new_ver = map_delete(P_delete, mmp);	//	new	version
-		t.next("delete time");
+		// t.next("delete time");
 		new_ver = map_insert(P_insert, new_ver); 
-		t.next("insert time");
+		// t.next("insert time");
 		return new_ver;
 	}
 
@@ -453,7 +453,7 @@ namespace BRTree{
 	void Tree::merge_nodes(shared_ptr<BaseNode> &L, shared_ptr<BaseNode> &R, shared_ptr<InteNode> &cur_node){
 		// deal with MBR, covered points of parent
 		if (L == nullptr) {
-			#ifdef ··
+			#ifdef USE_MBR
 			cur_node->mbr = R->mbr;
 			#endif
 			cur_node->num_pts = R->get_num_points();

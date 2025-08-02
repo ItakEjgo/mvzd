@@ -49,7 +49,7 @@ namespace geobase
         unsigned long long morton_id;
         Point() {}
         Point(FT _x, FT _y) : x(_x), y(_y) {}
-        Point(unsigned _id, FT _x, FT _y) : id(_id), x(_x), y(_y)
+        Point(size_t _id, FT _x, FT _y) : id(_id), x(_x), y(_y)
         {
             // morton_id = mortonIndex();
             // morton_id = interleave_bits();

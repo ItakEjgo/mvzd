@@ -337,7 +337,9 @@ struct augmented_ops : Map {
           // out[cnt++] = std::get<1>(et);
           parlay::assign_uninitialized(out[cnt++], std::get<1>(et));
         };
+        // auto cnt_bk = cnt;
         Map::iterate_seq(b, f_filter);
+        // cnt = cnt_bk;
         // Map::iterate_seq(b, f_filter);
       }
       else{
@@ -349,7 +351,10 @@ struct augmented_ops : Map {
             // out[cnt++] = cur_pt; 
           }
         };
+        // auto cnt_bk = cnt;
         Map::iterate_seq(b, f_filter);
+        // cnt = cnt_bk;
+        // Map::iterate_seq(b, f_filter);
       }
       return;
     }

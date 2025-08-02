@@ -81,7 +81,23 @@
         "format": "cpp",
         "ranges": "cpp",
         "span": "cpp",
-        "stacktrace": "cpp"
+        "stacktrace": "cpp",
+        "barrier": "cpp",
+        "bit": "cpp",
+        "compare": "cpp",
+        "concepts": "cpp",
+        "coroutine": "cpp",
+        "expected": "cpp",
+        "generator": "cpp",
+        "latch": "cpp",
+        "numbers": "cpp",
+        "print": "cpp",
+        "semaphore": "cpp",
+        "spanstream": "cpp",
+        "stdfloat": "cpp",
+        "stop_token": "cpp",
+        "syncstream": "cpp",
+        "text_encoding": "cpp"
     },
     "cmake.sourceDirectory": "/data/bhuan102/cpam-quadtree/CPAM/baselines/SpaceTreeLib/include/parlaylib"
 }

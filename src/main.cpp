@@ -197,6 +197,32 @@ void run(int argc, char** argv){
 		// tested batch-size
 
 		parlay::sequence<size_t> batch_sizes = {
+			10000,
+			20000,
+			50000,
+			100000,
+			200000,
+			500000,
+			1000000,
+			2000000,
+			5000000,
+			10000000,
+			20000000,
+			50000000,
+			100000000
+		};
+		if (algo == "combined"){
+			cout << "start batch insert" << endl;
+			ZDTest::batch_insert_test(P, batch_sizes);
+			CPAMZ::batch_insert_test(P, batch_sizes);
+			CPAMBB::batch_insert_test(P, batch_sizes);
+		}
+	}
+
+	/* batch-delete */
+	if (task == "batch-delete"){
+		// tested batch-size
+		parlay::sequence<size_t> batch_sizes = {
 			// 10000,
 			// 20000,
 			// 50000,
@@ -211,39 +237,16 @@ void run(int argc, char** argv){
 			// 50000000,
 			// 100000000
 		};
-		if (algo == "combined"){
-			cout << "start batch insert" << endl;
-			ZDTest::batch_insert_test(P, batch_sizes);
-			CPAMZ::batch_insert_test(P, batch_sizes);
-			CPAMBB::batch_insert_test(P, batch_sizes);
-		}
-	}
 
-	/* batch-delete */
-	if (task == "batch-delete"){
-		// tested batch-size
-		parlay::sequence<size_t> batch_sizes = {
-			10000,
-			20000,
-			50000,
-			100000,
-			200000,
-			500000,
-			1000000,
-			2000000,
-			5000000,
-			10000000,
-			// 20000000,
-			// 50000000,
-			// 100000000
-		};
-
-		parlay::sequence<size_t> tst = {1, 3, 2, 4, 5};
-		auto tst_b = parlay::sort(tst);
-		for (auto &val: tst){
-			cout << val << " ";
-		}
-		cout << endl;
+		// auto tst = P.substr(0, 10);
+		// auto P_set = geobase::get_sorted_points(tst);
+		// for (auto &val: tst){
+		// 	cout << val << endl;
+		// }
+		// line_splitter();
+		// for (auto &val: P_set){
+		// 	cout << val << endl;
+		// }
 
 		if (algo == "combined"){
 			ZDTest::batch_delete_test(P, batch_sizes);
@@ -271,8 +274,8 @@ void run(int argc, char** argv){
 			// range_count_querys = range_count_querys.substr(0, 1000);
 
 			// line_splitter();
-			// cout << "[zdtree]: " << endl;
-			// ZDTest::range_count_test(P, range_count_querys, cnt);
+			cout << "[zdtree]: " << endl;
+			ZDTest::range_count_test(P, range_count_querys, cnt);
 			line_splitter();
 			cout << "[cpambb]: " << endl;
 			CPAMBB::range_count_test(P, range_count_querys, cnt);
@@ -300,14 +303,14 @@ void run(int argc, char** argv){
 				}
 			}
 
-			CPAMBB::range_report_test(P, range_report_querys, cnt);
 			
 			// range_report_querys = range_report_querys.substr(0, 1000);
 			// line_splitter();
-			// cout << "[zdtree]: " << endl;
-			// ZDTest::range_report_test(P, range_report_querys, cnt);
-			// line_splitter();
-			// cout << "[cpambb]: " << endl;
+			cout << "[zdtree]: " << endl;
+			ZDTest::range_report_test(P, range_report_querys, cnt);
+			line_splitter();
+			cout << "[cpambb]: " << endl;
+			CPAMBB::range_report_test(P, range_report_querys, cnt);
 
 			/* Exp for granularity size*/
 			// parlay::sequence<size_t> granularity_sizes = {
@@ -318,9 +321,9 @@ void run(int argc, char** argv){
 			// 	CPAMBB::range_report_test(P, range_report_querys, cnt, val);
 			// }
 
-			// line_splitter();
-			// cout << "[cpamz]: " << endl;
-			// CPAMZ::range_report_test(P, range_report_querys, cnt);
+			line_splitter();
+			cout << "[cpamz]: " << endl;
+			CPAMZ::range_report_test(P, range_report_querys, cnt);
 		}
 		return;
 	}
@@ -361,7 +364,24 @@ void run(int argc, char** argv){
 		else{
 			if (algo == "mvzd"){
 				string mv_dir = cmd.getOptionValue("-mv");
-				ZDTest::multi_version_test(P, mv_dir);
+				ZDTest::multi_version_test(P, mv_dir, 18, 7);	// Bhutan
+				// ZDTest::multi_version_test(P, mv_dir, 14, 11);	// Japan
+			}
+			else if (algo == "cpambb"){
+				string mv_dir = cmd.getOptionValue("-mv");
+				// CPAMBB::multi_version_test(P, mv_dir, 14, 11);	// Japan
+				CPAMBB::multi_version_test(P, mv_dir, 18, 7);	// Bhutan
+			}
+			else if (algo == "cpamz"){
+				string mv_dir = cmd.getOptionValue("-mv");
+				// CPAMBB::multi_version_test(P, mv_dir, 14, 11);	// Japan
+				CPAMZ::multi_version_test(P, mv_dir, 18, 7);	// Bhutan
+
+			}
+			else if (algo == "combined"){
+				string mv_dir = cmd.getOptionValue("-mv");
+				ZDTest::multi_version_test(P, mv_dir, 18, 7);	// Bhutan
+				CPAMBB::multi_version_test(P, mv_dir, 18, 7);	// Bhutan
 			}
 			else{
 				cout << "unsupported" << endl;
@@ -435,7 +455,7 @@ void run(int argc, char** argv){
         
         cout << "[INFO]: Exp for Batch Size" << endl;
 		// cout << "[ZDtree]" << endl;
-		// ZDTest::spatial_diff_test_latency(P, queries, batch_sizes, ratio);
+		ZDTest::spatial_diff_test_latency(P, queries, batch_sizes, ratio);
 		// cout << "[CPAM-BB]" << endl;
 		// // CPAMZ::spatial_diff_test_latency(P, queries, batch_sizes, ratio);
 		// CPAMBB::spatial_diff_test_latency(P, queries, batch_sizes, ratio);
@@ -488,69 +508,63 @@ void run(int argc, char** argv){
 
 	if (task == "spatial-commit-merge"){
 		// cout << "dealing with spatial diff" << endl;
-		if (!cmd.getOption("-r")){
-			cout << "[Error]: <Path-to-Range-Query> is not specified." << endl;
-		}
-		else{
-			parlay::sequence<size_t> batch_sizes = {
-				10000,
-				// 20000,
-				// 50000,
-				// 100000,
-				// 200000,
-				// 500000,
-				// 1000000,
-				// 2000000,
-				// 5000000,
-				// 10000000,
-				// 20000000, 
-				// 50000000,
-				// 100000000
-				// 400000000,
-				// 700000000,
-				// 100000000,
-			};
+	
+		parlay::sequence<size_t> batch_sizes = {
+			// 10000,
+			// 20000,
+			// 50000,
+			// 100000,
+			// 200000,
+			// 500000,
+			// 1000000,
+			// 2000000,
+			// 5000000,
+			10000000,
+			// 20000000, 
+			// 50000000,
+			// 100000000
+			// 400000000,
+			// 700000000,
+			// 100000000,
+		};
 
-			string query_file = cmd.getOptionValue("-r");
-			auto [cnt, range_report_querys] = geobase::read_range_query(query_file, 8, maxSize);
-			bool early_end = false;
+		// string query_file = cmd.getOptionValue("-r");
+		// auto [cnt, range_report_querys] = geobase::read_range_query(query_file, 8, maxSize);
+		parlay::sequence<Bounding_Box> range_report_querys = {};
+		bool early_end = false;
 			
-			// if (query_file[query_file.length() - 5] != '0'){
-			// 	early_end = true;
-			// }
+		// if (query_file[query_file.length() - 5] != '0'){
+		// 	early_end = true;
+		// }
 
-			// range_report_querys = range_report_querys.substr(0, 1);
-			line_splitter();
-			cout << "[zdtree fix ratio]: " << endl;
-			ZDTest::spatial_diff_test(P, range_report_querys, batch_sizes, early_end);
-			// ZDTest::spatial_diff_test_fix_ratio(P, range_report_querys, batch_sizes);
-			line_splitter();
-			cout << "[cpambb fix ratio]: " << endl;
-			CPAMBB::spatial_diff_test(P, range_report_querys, batch_sizes, early_end);
-			// CPAMBB::spatial_diff_test_fix_ratio(P, range_report_querys, batch_sizes);
-			line_splitter();
-			cout << "[cpamz fix ratio]: " << endl;
-			CPAMZ::spatial_diff_test(P, range_report_querys, batch_sizes, early_end);
-			// CPAMZ::spatial_diff_test_fix_ratio(P, range_report_querys, batch_sizes);
-			cout << endl;
-			line_splitter();
-			cout << endl;
+		// range_report_querys = range_report_querys.substr(0, 1);
+		line_splitter();
+		cout << "[zdtree fix ratio]: " << endl;
+		ZDTest::spatial_diff_test(P, range_report_querys, batch_sizes, early_end);
+		// ZDTest::spatial_diff_test_fix_ratio(P, range_report_querys, batch_sizes);
+		line_splitter();
+		cout << "[cpambb fix ratio]: " << endl;
+		CPAMBB::spatial_diff_test(P, range_report_querys, batch_sizes, early_end);
+		// CPAMBB::spatial_diff_test_fix_ratio(P, range_report_querys, batch_sizes);
+		line_splitter();
+		cout << "[cpamz fix ratio]: " << endl;
+		CPAMZ::spatial_diff_test(P, range_report_querys, batch_sizes, early_end);
+		// CPAMZ::spatial_diff_test_fix_ratio(P, range_report_querys, batch_sizes);
+		cout << endl;
 
-
-			// parlay::sequence<size_t> ratios = {1, 2, 3, 4, 5, 6, 7, 8, 9};
-			// /* Fix 10% modifications */
-			// line_splitter();
-			// cout << "[zdtree fix ratio]: " << endl;
-			// // ZDTest::spatial_diff_test(P, range_report_querys, batch_sizes, early_end);
-			// ZDTest::spatial_diff_test_fix_size(P, range_report_querys, ratios);
-			// line_splitter();
-			// cout << "[cpambb fix ratio]: " << endl;
-			// // CPAMBB::spatial_diff_test(P, range_report_querys, batch_sizes, early_end);
-			// CPAMBB::spatial_diff_test_fix_size(P, range_report_querys, ratios);
-			// line_splitter();
-			// cout << "[cpamz fix ratio]: " << endl;
-			// CPAMZ::spatial_diff_test_fix_size(P, range_report_querys, ratios);
-		}
+		// parlay::sequence<size_t> ratios = {1, 2, 3, 4, 5, 6, 7, 8, 9};
+		// /* Fix 10% modifications */
+		// line_splitter();
+		// cout << "[zdtree fix ratio]: " << endl;
+		// // ZDTest::spatial_diff_test(P, range_report_querys, batch_sizes, early_end);
+		// ZDTest::spatial_diff_test_fix_size(P, range_report_querys, ratios);
+		// line_splitter();
+		// cout << "[cpambb fix ratio]: " << endl;
+		// // CPAMBB::spatial_diff_test(P, range_report_querys, batch_sizes, early_end);
+		// CPAMBB::spatial_diff_test_fix_size(P, range_report_querys, ratios);
+		// line_splitter();
+		// cout << "[cpamz fix ratio]: " << endl;
+		// CPAMZ::spatial_diff_test_fix_size(P, range_report_querys, ratios);
 	}
 
 	if (task == "spatial-join"){

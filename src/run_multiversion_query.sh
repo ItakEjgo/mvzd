@@ -1,25 +1,36 @@
 #!/bin/bash
 
-data_dir_varden="/data/bhuan102/mvzd-data-processing/processed_data/synthetic_data/varden"
-data_dir_uniform="/data/bhuan102/mvzd-data-processing/processed_data/synthetic_data//uniform"
-MVR_dir="/data/bhuan102/libspatialindex"
+#bhutan dir
+data_dir="/data/bhuan102/mvzd-data-processing/raw_data/real_data/coordinate_data/bhutan-180101.txt"
+diff_dir="/data/bhuan102/mvzd-data-processing/processed_data/real_data/bhutan/"
 
-pkd_new_dir="/data/bhuan102/SpaceTreeLib/build"
+#japan dir
+# data_dir="/data/bhuan102/mvzd-data-processing/raw_data/real_japan/coordinate_data/japan-140101.txt"
+# diff_dir="/data/bhuan102/mvzd-data-processing/processed_data/real_data/multi-version/"
 
-range_count_dir_varden="/data/bhuan102/mvzd-data-processing/range_count_query/varden"
-range_count_dir_uniform="/data/bhuan102/mvzd-data-processing/range_count_query/uniform"
+MVR_dir="/data/bhuan102/cpam-quadtree/CPAM/baselines/libspatialindex"
+Rtree_dir="/data/bhuan102/cpam-quadtree/CPAM/baselines/boostRtree"
     
 make
 
 export PARLAY_NUM_THREADS
-file="1.in"
-dir=$1
-echo "---------------EXP_SPLIT--------------------------"
-# numactl -i all $pkd_new_dir/test -p $data_dir_varden/$dir/$file -d 2 -t 0 -q 4 -r 3 -i 1 -s 0
-# echo "Varden Results"
-# # LD_PRELOAD=/usr/local/lib/libjemalloc.so.2 numactl -i all ./main -i $data_dir_varden/$dir/$file -t build -a mvzd
-# numactl -i all ./main -i $data_dir_varden/$dir/$file -t range-count -a mvzd -r $range_count_dir_varden/$dir/1.in-0.qry
-numactl -i all ./main -i $data_dir_varden/$dir/$file -t multi-version-query-test -a mvzd -mv $range_count_dir_varden/$dir
-diff mvzd_range_count-2-on-0.txt mvzd_range_count-2-on-6.txt
-# diff mvzd_range_count-2-on-0.txt mvzd_range_count-2-on-4.txt
-# diff mvzd_range_count-2-on-0.txt mvzd_range_count-2-on-6.txt
+# echo "[CPAM]:"
+# numactl -i all ./main -i $data_dir -a combined -mv $diff_dir -real 1 -t multi-version-test
+
+# numactl -i all ./main -i $data_dir -a cpambb -mv $diff_dir -real 1 -t multi-version-test > debug/bhutan-cpambb-case-study.log
+# numactl -i all ./main -i $data_dir -a cpamz -mv $diff_dir -real 1 -t multi-version-test > debug/bhutan-cpamz-case-study.log
+# echo "[ZDTree]:"
+numactl -i all ./main -i $data_dir -a mvzd -mv $diff_dir -real 1 -t multi-version-test > debug/bhutan-zdtree-case-study-new.log
+# echo "[boostRTree]:"
+# numactl -i all $Rtree_dir/main -i $data_dir -a mvzd -mv $diff_dir -real 1 -t multi-version-test > debug/bhutan-rtree-case-study-japan.log
+# echo "[MVRTree]:"
+# numactl -i all $MVR_dir/main -i $data_dir -a mvrtree -mv $diff_dir -real 1 -t multi-version-test > debug/bhutan-mvrtree-case-study-japan.log
+# echo "[MV3RTree]:"
+# numactl -i all $MVR_dir/main -i $data_dir -a mv3rtree -mv $diff_dir -real 1 -t multi-version-test > debug/bhutan-mv3rtree-case-study-japan.log
+
+# export PARLAY_NUM_THREADS=1
+# echo "[CPAM]:"
+# numactl -i all ./main -i $data_dir -a cpambb -mv $diff_dir -real 1 -t multi-version-test > debug/bhutan-cpambb-case-study-sequential.log
+# numactl -i all ./main -i $data_dir -a cpamz -mv $diff_dir -real 1 -t multi-version-test > debug/bhutan-cpamz-case-study-sequential.log
+# echo "[ZDTree Sequential]:"
+# numactl -i all ./main -i $data_dir -a mvzd -mv $diff_dir -real 1 -t multi-version-test > debug/bhutan-zdtree-case-study-sequential-japan.log

@@ -30,6 +30,109 @@ size_t visited_leaf, visited_inte;
 
 namespace CPAMBB{
 
+
+	template<typename PT>
+	void multi_version_test(PT P, string dir, int start_year = 14, int version_num = 5){
+		auto cur_year = start_year;
+		
+		parlay::sequence<geobase::Point> P_delete[version_num], P_insert[version_num], P_update[version_num], P_updove[version_num];
+
+		for (auto i = 0; i != version_num; i++){
+			// cout << "[INFO] Year: " << cur_year << "-" << cur_year + 1 << " status:" << endl;
+			auto delete_file_name = dir + to_string(cur_year) + "-" + to_string(cur_year + 1) + "-delete.txt";
+			auto insert_file_name = dir + to_string(cur_year) + "-" + to_string(cur_year + 1) + "-insert.txt";
+			auto update_file_name = dir + to_string(cur_year) + "-" + to_string(cur_year + 1) + "-update.txt";
+			auto updove_file_name = dir + to_string(cur_year) + "-" + to_string(cur_year + 1) + "-update_remove.txt";
+			// cout << delete_file_name << endl << insert_file_name << endl;
+			ifstream fin_delete(delete_file_name);
+			ifstream fin_insert(insert_file_name);
+			ifstream fin_update(update_file_name);
+			ifstream fin_updove(updove_file_name);
+
+			auto delete_mbr = read_pts(P_delete[i], fin_delete, 1);
+			auto insert_mbr = read_pts(P_insert[i], fin_insert, 1);
+			auto update_mbr = read_pts(P_update[i], fin_update, 1);
+			auto updove_mbr = read_pts(P_updove[i], fin_updove, 1);
+
+			if (P_update[i].size() != P_updove[i].size()){
+				cout << "[ERROR]: inconsistent # of update pts!" << endl;
+			}
+
+			P_delete[i].append(P_updove[i]);
+			P_insert[i].append(P_update[i]);
+
+			cur_year += 1;
+			delete_mbr = insert_mbr; // useless, just remove warning
+			update_mbr = updove_mbr;
+		}
+
+		vector<CPAMBB::zmap> all_versions;
+		CPAMBB::zmap tree;
+
+		/* Build initial version */
+		auto build_avg = time_loop(
+            3, 1.0, [&]() {
+				tree.clear();
+			},
+            [&]() {
+				tree = CPAMBB::map_init(P);	// initi
+            },
+   	    	[&](){
+			});
+
+		cout << "[cpambb init build time]: " << fixed << setprecision(6) << build_avg << " Seconds" << endl;
+
+		all_versions.emplace_back(tree);
+
+		auto f_noop = [&](const auto &et){	return 0; };
+
+		std::unordered_map<size_t, bool> mmp = {}, num_mmp = {};
+		double cur_mem = 0.0, prev_mem = 0.0; 
+		size_t cur_inte_num = 0, cur_leaf_num = 0, cur_leaf_sz = 0;
+		size_t pre_inte_num = 0, pre_leaf_num = 0, pre_leaf_sz = 0;
+		cur_leaf_sz += pre_leaf_sz;
+		
+		prev_mem = 1.0 * tree.size_in_bytes(f_noop, mmp);
+		tie(pre_inte_num, pre_leaf_num, pre_leaf_sz) = tree.node_stats(num_mmp);
+
+		cout << "[init-version memory]: " << prev_mem / 1024.0 / 1024.0 << " MB" << endl;
+		cout << "[init-version node nums]: " << pre_inte_num << " interior nodes, " << pre_leaf_num << " leaf nodes" << endl;
+		
+		vector<zmap> new_ver(version_num);
+
+		for (auto i = 0; i < version_num; i++){
+			cout << "dealing with version " << i + 1 << ":" << endl;
+
+			auto commit_avg = time_loop(
+				3, 1.0, 
+				[&]() {
+					new_ver[i].clear();
+				},
+				[&]() {
+					new_ver[i] = CPAMBB::map_commit(all_versions[i], P_insert[i], P_delete[i]);
+				},
+				[&](){});
+
+			all_versions.emplace_back(new_ver[i]);
+			cur_mem = 0;
+			mmp.clear();
+			num_mmp.clear();
+			cur_inte_num = cur_leaf_num = 0;
+
+			for (size_t j = 0; j < all_versions.size(); j++){
+				cur_mem += 1.0 * all_versions[j].size_in_bytes(f_noop, mmp); 	// accumulate all version memories, shared pointers only count once
+				auto [tmp_inte_num, tmp_leaf_num, tmp_leaf_sz] = all_versions[j].node_stats(num_mmp);
+				cur_inte_num += tmp_inte_num, cur_leaf_num += tmp_leaf_num;
+			}
+			cout << "[new ver commit time]: " << fixed << setprecision(6) << commit_avg << " Seconds" << endl;
+			cout << "[cpambb memory usage]: " << (cur_mem - prev_mem) / 1024.0 / 1024.0  << " MB" << endl;
+			cout << "[cpambb node nums]: " << cur_inte_num - pre_inte_num << " interior nodes, " << cur_leaf_num - pre_leaf_num << " leaf nodes" << endl;
+			prev_mem = cur_mem;
+			pre_inte_num = cur_inte_num;
+			pre_leaf_num = cur_leaf_num;
+		}
+	}
+
 	template<typename PT, typename RQ>
 	void plain_spatial_diff_test_latency(PT &P, RQ &range_queries, parlay::sequence<size_t> &batch_sizes, size_t &insert_ratio){
 		/*  build tree */
@@ -260,7 +363,7 @@ namespace CPAMBB{
 		auto cpambb0 = CPAMBB::map_init(P);	//	initial version
 
 		for (auto &batch_size: batch_sizes){
-			if (batch_size > P.size()) break;
+			if (batch_size > P.size()) batch_size = P.size();
 			cout << "[batch-size]: " << batch_size << endl;
 
 			auto P_insert = P.substr(0, batch_size);
@@ -312,7 +415,9 @@ namespace CPAMBB{
 			if (!early_end){
 				decltype(cpambb0) commit_ver;
 	    		auto commit_avg = time_loop(
-		    		3, 1.0, [&]() {},
+		    		3, 1.0, [&]() {
+						commit_ver.clear();
+					},
 		    		[&]() {
 						commit_ver = CPAMBB::map_commit(cpambb0, P_insert, P_delete);
 		    		},
@@ -322,7 +427,12 @@ namespace CPAMBB{
 				parlay::sequence<Point> conflict_insert, conflict_update, conflict_delete;
 				decltype(cpambb0) merge_ver;
 				auto merge_avg = time_loop(
-		    		3, 1.0, [&]() {},
+		    		3, 1.0, [&]() {
+						merge_ver.clear();
+						conflict_insert.clear();
+						conflict_update.clear();
+						conflict_delete.clear();
+					},
 		    		[&]() {
 						tie(merge_ver, conflict_insert, conflict_update, conflict_delete) = CPAMBB::map_merge(cpambb0, cpambb1, cpambb2);
 		    		},
@@ -477,7 +587,9 @@ namespace CPAMBB{
 		CPAMBB::zmap tree;
 
 		auto cpam_build_avg = time_loop(
-			3, 1.0, [&](){},
+			3, 1.0, [&](){
+				tree.clear();
+			},
 			[&](){
 				tree = CPAMBB::map_init(P);
 			},
@@ -790,7 +902,7 @@ namespace CPAMBB{
 		// auto rand_p = shuffle_point(P);
 
 		for (auto &num_processed: batch_sizes){
-			if (num_processed > P.size()) break;
+			if (num_processed > P.size()) num_processed = P.size();
 			auto P2 = P.substr(0, num_processed);
 			bool print_flag = true;
 
@@ -820,6 +932,95 @@ namespace CPAMBB{
 
 //	use CPAM (without bounding box) to build
 namespace CPAMZ{
+
+	template<typename PT>
+	void multi_version_test(PT P, string dir, int start_year = 14, int version_num = 5){
+		auto cur_year = start_year;
+		
+		parlay::sequence<geobase::Point> P_delete[version_num], P_insert[version_num], P_update[version_num], P_updove[version_num];
+
+		for (auto i = 0; i != version_num; i++){
+			// cout << "[INFO] Year: " << cur_year << "-" << cur_year + 1 << " status:" << endl;
+			auto delete_file_name = dir + to_string(cur_year) + "-" + to_string(cur_year + 1) + "-delete.txt";
+			auto insert_file_name = dir + to_string(cur_year) + "-" + to_string(cur_year + 1) + "-insert.txt";
+			auto update_file_name = dir + to_string(cur_year) + "-" + to_string(cur_year + 1) + "-update.txt";
+			auto updove_file_name = dir + to_string(cur_year) + "-" + to_string(cur_year + 1) + "-update_remove.txt";
+			// cout << delete_file_name << endl << insert_file_name << endl;
+			ifstream fin_delete(delete_file_name);
+			ifstream fin_insert(insert_file_name);
+			ifstream fin_update(update_file_name);
+			ifstream fin_updove(updove_file_name);
+
+			auto delete_mbr = read_pts(P_delete[i], fin_delete, 1);
+			auto insert_mbr = read_pts(P_insert[i], fin_insert, 1);
+			auto update_mbr = read_pts(P_update[i], fin_update, 1);
+			auto updove_mbr = read_pts(P_updove[i], fin_updove, 1);
+
+			if (P_update[i].size() != P_updove[i].size()){
+				cout << "[ERROR]: inconsistent # of update pts!" << endl;
+			}
+
+			P_delete[i].append(P_updove[i]);
+			P_insert[i].append(P_update[i]);
+
+			cur_year += 1;
+			delete_mbr = insert_mbr; // useless, just remove warning
+			update_mbr = updove_mbr;
+		}
+
+		vector<Morton::zmap> all_versions;
+		Morton::zmap tree;
+
+		/* Build initial version */
+		auto build_avg = time_loop(
+            3, 1.0, [&]() {
+				tree.clear();
+			},
+            [&]() {
+				tree = Morton::CPAMZ_init(P);	// initi
+            },
+   	    	[&](){
+			});
+
+		cout << "[cpamz init build time]: " << fixed << setprecision(6) << build_avg << " Seconds" << endl;
+
+		all_versions.emplace_back(tree);
+
+		auto f_noop = [&](const auto &et){	return 0; };
+
+		std::unordered_map<size_t, bool> mmp = {};
+		double cur_mem = 0.0, prev_mem = 0.0; 
+		prev_mem = 1.0 * tree.size_in_bytes(f_noop, mmp);
+
+		cout << "[init-version memory]: " << prev_mem / 1024.0 / 1024.0 << " MB" << endl;
+		
+		vector<Morton::zmap> new_ver(version_num);
+
+		for (auto i = 0; i < version_num; i++){
+			cout << "dealing with version " << i + 1 << ":" << endl;
+
+			auto commit_avg = time_loop(
+				3, 1.0, 
+				[&]() {
+					new_ver[i].clear();
+				},
+				[&]() {
+					new_ver[i] = Morton::CPAMZ_commit(all_versions[i], P_insert[i], P_delete[i]);
+				},
+				[&](){});
+
+			all_versions.emplace_back(new_ver[i]);
+			cur_mem = 0;
+			mmp.clear();
+			for (size_t j = 0; j < all_versions.size(); j++){
+				cur_mem += 1.0 * all_versions[j].size_in_bytes(f_noop, mmp); 	// accumulate all version memories, shared pointers only count once
+			}
+			cout << "[new ver commit time]: " << fixed << setprecision(6) << commit_avg << " Seconds" << endl;
+			cout << "[cpamz memory usage]: " << (cur_mem - prev_mem) / 1024.0 / 1024.0  << " MB" << endl;
+			prev_mem = cur_mem;
+		}
+	}
+
 
 	template<typename PT, typename RQ>
     void plain_spatial_diff_test_latency(PT &P, RQ &range_queries, parlay::sequence<size_t> &batch_sizes, size_t &insert_ratio){
@@ -1005,7 +1206,7 @@ namespace CPAMZ{
 		// parlay::sequence<Point> ret;
 
 		for (auto &batch_size: batch_sizes){
-			if (batch_size > P.size()) break;
+			if (batch_size > P.size()) batch_size = P.size();
 			cout << "[batch-size]: " << batch_size << endl;
 			
 			auto P_insert = P.substr(0, batch_size);
@@ -1053,7 +1254,9 @@ namespace CPAMZ{
 			if (!early_end){
 				decltype(cpamz0) commit_ver;
 				auto commit_avg = time_loop(
-					3, 1.0, [&]() {},
+					3, 1.0, [&]() {
+						commit_ver.clear();
+					},
 					[&]() {
 						commit_ver = Morton::CPAMZ_commit(cpamz0, P_insert, P_delete);
 					},
@@ -1064,7 +1267,12 @@ namespace CPAMZ{
 				parlay::sequence<Point> conflict_insert, conflict_update, conflict_delete;
 				// cout << cpamz0.size() << ", " << cpamz1.size() << ", " << cpamz2.size() << endl;
 				auto merge_avg = time_loop(
-					3, 1.0, [&]() {},
+					3, 1.0, [&]() {
+						merge_ver.clear();
+						conflict_insert.clear();
+						conflict_update.clear();
+						conflict_delete.clear();
+					},
 					[&]() {
 						tie(merge_ver, conflict_insert, conflict_update, conflict_delete)  = Morton::CPAMZ_merge(cpamz0, cpamz1, cpamz2);
 					},
@@ -1126,7 +1334,9 @@ namespace CPAMZ{
 	void build_test(PT P, bool use_hilbert = false){
 		Morton::zmap tree;
 		auto cpam_build_avg = time_loop(
-			3, 1.0, [&](){},
+			3, 1.0, [&](){
+				tree.clear();
+			},
 			[&](){
 				tree = Morton::CPAMZ_init(P);
 			},
@@ -1205,7 +1415,7 @@ namespace CPAMZ{
 		// auto rand_p = shuffle_point(P);
 
 		for (auto &num_processed: batch_sizes){
-			if (num_processed > P.size()) break;
+			if (num_processed > P.size()) num_processed = P.size();
 			auto P2 = P.substr(0, num_processed);
 
 			bool print_flag = true;
@@ -1681,7 +1891,7 @@ namespace ZDTest{
 		parlay::sequence<size_t> removeCnt(range_queries.size());
 
 		for (auto &batch_size: batch_sizes){
-			if (batch_size > P.size()) break;
+			if (batch_size > P.size()) batch_size = P.size();
 			cout << "[batch-size]: " << batch_size << endl;
 
 			auto P_insert = P.substr(0, batch_size);
@@ -1734,7 +1944,9 @@ namespace ZDTest{
 			if (!early_end){
 				decltype(zdtree.root) commit_ver;
 	    		auto commit_avg = time_loop(
-		    		3, 1.0, [&]() {},
+		    		3, 1.0, [&]() {
+						commit_ver.reset();
+					},
 		    		[&]() {
 						commit_ver = zdtree.commit(zdtree.root, P_insert, P_delete);
 		    		},
@@ -1749,7 +1961,12 @@ namespace ZDTest{
 				parlay::sequence<Point> conflict_insert, conflict_update, conflict_delete;
 
 				auto merge_avg = time_loop(
-		    		3, 1.0, [&]() {},
+		    		3, 1.0, [&]() {
+						merge_ver.reset();
+						conflict_insert.clear();
+						conflict_update.clear();
+						conflict_delete.clear();
+					},
 		    		[&]() {
 						tie(merge_ver, conflict_insert, conflict_update, conflict_delete) = zdtree.merge(zdtree.root, new_ver, new_ver2);
 		    		},
@@ -1932,7 +2149,9 @@ namespace ZDTest{
 		auto cur_year = start_year;
 		
 		parlay::sequence<geobase::Point> P_delete[version_num], P_insert[version_num], P_update[version_num], P_updove[version_num];
+
 		for (auto i = 0; i != version_num; i++){
+			// cout << "[INFO] Year: " << cur_year << "-" << cur_year + 1 << " status:" << endl;
 			auto delete_file_name = dir + to_string(cur_year) + "-" + to_string(cur_year + 1) + "-delete.txt";
 			auto insert_file_name = dir + to_string(cur_year) + "-" + to_string(cur_year + 1) + "-insert.txt";
 			auto update_file_name = dir + to_string(cur_year) + "-" + to_string(cur_year + 1) + "-update.txt";
@@ -1948,52 +2167,79 @@ namespace ZDTest{
 			auto update_mbr = read_pts(P_update[i], fin_update, 1);
 			auto updove_mbr = read_pts(P_updove[i], fin_updove, 1);
 
+			// cout << "# of delete pts: " << P_delete[i].size() << endl;
+			// cout << "# of insert pts: " << P_insert[i].size() << endl;
+
+			if (P_update[i].size() != P_updove[i].size()){
+				cout << "[ERROR]: inconsistent # of update pts!" << endl;
+			}
+			// cout << "# of update pts: " << P_update[i].size() << endl;
+
+			P_delete[i].append(P_updove[i]);
+			P_insert[i].append(P_update[i]);
+
 			cur_year += 1;
 			delete_mbr = insert_mbr; // useless, just remove warning
 			update_mbr = updove_mbr;
 		}
-		double status_time = 0.0;
-		auto tot = 0;
 
-		auto zdtree_multi_version_avg = time_loop(
-            3, 1.0, [&]() {},
+		ZDTree::Tree zdtree(leaf_size);
+
+		/* Build initial version */
+		auto build_avg = time_loop(
+            3, 1.0, [&]() {
+				zdtree.clear();
+			},
             [&]() {
-				// Build zd-tree for input points (initial version)
                 auto P_set = get_sorted_points(P);
-                ZDTree::Tree zdtree(leaf_size);
                 zdtree.build(P_set);
-				zdtree.multi_version_roots.emplace_back(zdtree.root);	
-
-	    		shared_ptr<ZDTree::BaseNode> new_ver = zdtree.root;
-				for (auto i = 0; i < version_num; i++){
-					cout << "dealing with version " << i << endl;
-			    	auto cur_P_delete = get_sorted_points(P_delete[i]);
-					auto cur_P_insert = get_sorted_points(P_insert[i]);
-					auto cur_P_update = get_sorted_points(P_update[i]);
-					auto cur_P_updove = get_sorted_points(P_updove[i]);
-
-					new_ver = zdtree.multi_version_batch_delete_sorted(cur_P_updove, new_ver);
-			    	new_ver = zdtree.multi_version_batch_delete_sorted(cur_P_delete, new_ver);
-					// cout << "delete finished." << endl;
-					new_ver = zdtree.multi_version_batch_insert_sorted(cur_P_update, new_ver);
-					new_ver = zdtree.multi_version_batch_insert_sorted(cur_P_insert, new_ver);
-					// cout << "insert finished." << endl;
-
-					zdtree.multi_version_roots.emplace_back(new_ver);
-				}
-				parlay::internal::timer t("status", true);
-				tot = zdtree.num_of_nodes();
-				cout << "num of total tree nodes: " << tot << endl;
-				t.next_time();
-				status_time += t.total_time();
             },
-        [&](){});
+   	    	[&](){
+			});
 
-        cout << fixed << setprecision(6) << "[zdtree]: multi-version (avg): " << zdtree_multi_version_avg - status_time / 3 << endl;
-		cout << "[zdtree]: total num of tree nodes: " << tot << endl;
-		// for (auto i = 0; i != version_num; i++){
-		// 	cout << P_delete[i].size() << ", " << P_insert[i].size() << endl;
-		// }
+		zdtree.multi_version_roots.emplace_back(zdtree.root);	//	store the initial version 0
+		auto tot = zdtree.num_of_nodes();
+		auto stat = zdtree.get_tree_statistics();
+
+		cout << "[zdtree init build time]: " << fixed << setprecision(6) << build_avg << " Seconds" << endl;
+		cout << "[zdtree num of total tree nodes]: " << tot << endl;
+		cout << "[zdtree node nums]: " << stat.num_inte_nodes << " interior nodes, " << stat.num_leaf_nodes << " leaf nodes" << endl;
+		cout << "[zdtree memory usage]: " << stat.get_total() << " MB" << endl;
+		// cout << "[memory usage for inte nodes]: " << 1.0 * stat.mem_inte_nodes / 1024.0 / 1024.0 << " MB" << endl 
+		//      << "[memory usage for leaf nodes]: " << 1.0 * stat.mem_leaf_nodes / 1024.0 / 1024.0 << " MB"  << endl;
+		
+		shared_ptr<ZDTree::BaseNode> new_ver = zdtree.root;
+
+		for (auto i = 0; i < version_num; i++){
+			cout << "dealing with version " << i + 1 << ":" << endl;
+
+			auto commit_avg = time_loop(
+				3, 1.0, 
+				[&]() {
+					new_ver.reset();
+				},
+				[&]() {
+					new_ver = zdtree.commit(zdtree.multi_version_roots[i], P_insert[i], P_delete[i]);
+				},
+				[&](){});
+
+			zdtree.multi_version_roots.emplace_back(new_ver);
+			cout << "[new ver commit time]: " << fixed << setprecision(6) << commit_avg << " Seconds" << endl;
+
+			tot = zdtree.num_of_nodes();
+			auto cur_stat = zdtree.get_tree_statistics();
+
+			cout << "[num of total tree nodes]: " << tot << endl;
+			cout << "[zdtree memory usage]: " << cur_stat.get_total() - stat.get_total() << " MB" << endl;
+			cout << "[zdtree tot inte memory usage]: " << 1.0 * cur_stat.mem_inte_nodes / 1024.0 / 1024.0 << " MB" << endl;
+			cout << "[zdtree tot leaf memory usage]: " << 1.0 * cur_stat.mem_leaf_nodes / 1024.0 / 1024.0 << " MB" << endl;
+			cout << "[zdtree increased nodes]: " << cur_stat.num_inte_nodes - stat.num_inte_nodes << " interior nodes, " <<
+													cur_stat.num_leaf_nodes - stat.num_leaf_nodes << " leaf nodes" << endl;
+			stat = cur_stat;
+
+			// cout << "[memory usage for inte nodes]: " << 1.0 * stat.mem_inte_nodes / 1024.0 / 1024.0 << " MB" << endl 
+			//  	<< "[memory usage for leaf nodes]: " << 1.0 * stat.mem_leaf_nodes / 1024.0 / 1024.0 << " MB"  << endl;	
+		}
 	}
 
     template<class PT>
@@ -2385,11 +2631,11 @@ namespace ZDTest{
 					new_ver.reset();
 				},
 		    	[&]() {
-					parlay::internal::timer t("debug", true);
+					// parlay::internal::timer t("debug", true);
 			    	P_set = get_sorted_points(P2);
-					t.next("sort time");
+					// t.next("sort time");
 			    	new_ver = zdtree.multi_version_batch_insert_sorted(P_set, zdtree.root);
-					t.next("insert time");
+					// t.next("insert time");
 		    	},
 	    	[&](){
 				if (print_flag){
@@ -2414,7 +2660,7 @@ namespace ZDTest{
 		
 
 		for (auto &num_processed: batch_sizes){
-			if (num_processed > P.size()) break;
+			if (num_processed > P.size()) num_processed = P.size();
 	    	auto P2 = P.substr(0, num_processed);	// first x%
 			// bool print_flag = true;
 	    	auto zdtree_delete_avg = time_loop(
@@ -2427,12 +2673,12 @@ namespace ZDTest{
 					// cout << "before size: " << zdtree.collect_records(zdtree.root).size() << endl;
 				},
 		    	[&]() {
-					parlay::internal::timer t("debug", false);
+					// parlay::internal::timer t("debug", true);
 			    	// P_set = get_sorted_address(P2);
 			    	P_set = get_sorted_points(P2);
-					t.next("sort time");
+					// t.next("sort time");
 			    	new_ver = zdtree.multi_version_batch_delete_sorted(P_set, zdtree.root);
-					t.next("delete time");
+					// t.next("delete time");
 		    	},
 	    	[&](){
 				// cout << "after size: " << zdtree.collect_records(zdtree.root).size() << endl;

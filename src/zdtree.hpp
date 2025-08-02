@@ -12,6 +12,7 @@
 // #define SEQ
 #define USE_PT
 
+extern geobase::Bounding_Box largest_mbr;
 extern geobase::break_down zd_build_break_down;
 extern size_t maxSize;
 extern double zd_leaf_copy_time;
@@ -31,6 +32,9 @@ namespace ZDTree{
 		size_t mem_inte_nodes;
 		size_t mem_leaf_nodes;
 		tree_stat():num_inte_nodes(0), num_leaf_nodes(0), mem_inte_nodes(0), mem_leaf_nodes(0){}
+		auto get_total(){
+			return 1.0 * (mem_inte_nodes + mem_leaf_nodes) / 1024.0 / 1024.0;
+		}
 	};
 
 	struct BaseNode{
@@ -180,6 +184,8 @@ namespace ZDTree{
 
 
 		// collect all records in version x	
+		template<typename Out>
+		auto collect_records(shared_ptr<BaseNode> &x, Out &out, size_t &cnt);
 		auto collect_records(shared_ptr<BaseNode> &x);
 		auto collect_records(shared_ptr<BaseNode> &x, Bounding_Box &query_mbr, 
 							Bounding_Box &cur_mbr, FT x_prefix, FT y_prefix, size_t b, bool x_splitter);
@@ -265,7 +271,6 @@ namespace ZDTree{
 	// 	while (j < sorted_remove.size()) delete_points.emplace_back(sorted_remove[j++]);
 	// 	return make_tuple(insert_points, delete_points, update_points);
 	// }
-	
 	auto Tree::collect_records(shared_ptr<BaseNode> &x){
 		sequence<Point> ret = {};
 		if (!x){
@@ -286,6 +291,31 @@ namespace ZDTree{
 		);
 		ret.append(R);
 		return ret;
+	}
+	
+	template<typename Out>
+	auto Tree::collect_records(shared_ptr<BaseNode> &x, Out &out, size_t &cnt){
+		if (!x){
+			return;
+		}
+		if (x->is_leaf()){
+			auto cur_leaf = static_cast<LeafNode*>(x.get());
+			for (auto &p: cur_leaf->records){
+				out[cnt++] = p;
+			}
+			return;
+		}
+		auto cur_inte = static_cast<InteNode*>(x.get());
+		size_t R_cnt = cnt;
+		if (cur_inte->l_son) R_cnt += cur_inte->l_son->get_num_points();
+
+		auto collect_left = [&](){ collect_records(cur_inte->l_son, out, cnt); }; 
+		auto collect_right = [&](){ collect_records(cur_inte->r_son, out, R_cnt); };
+		par_do_if(x->get_num_points() >= granularity_cutoff,
+			collect_left,
+			collect_right
+		);
+		return;
 	}
 
 	auto Tree::collect_records(shared_ptr<BaseNode> &x, Bounding_Box &query_mbr, 
@@ -340,19 +370,19 @@ namespace ZDTree{
 	}
 
 	auto Tree::commit(shared_ptr<BaseNode> &old_version, sequence<Point> &P_insert, sequence<Point> &P_delete){
-		parlay::internal::timer t("zdtree breakdown", true);
+		// parlay::internal::timer t("zdtree breakdown", true);
 		auto P_set = get_sorted_points(P_delete);
-
-		// auto tmp_ver = multi_version_batch_delete_sorted(P_set, old_version);
-		// auto new_ver = multi_version_batch_insert_sorted(P_set, tmp_ver);
-		// gc_nocheck(tmp_ver);
+		auto tmp_ver = multi_version_batch_delete_sorted(P_set, old_version);
+		P_set = get_sorted_points(P_insert);
+		auto new_ver = multi_version_batch_insert_sorted(P_set, tmp_ver);
+		gc_nocheck(tmp_ver);
 
 		// cout << "base version size: " << collect_records(old_version).size() << endl;
-		auto new_ver = multi_version_batch_delete_sorted(P_set, old_version);
-		t.next("delete time");
-		P_set = get_sorted_points(P_insert);
-		new_ver = multi_version_batch_insert_sorted(P_set, new_ver);
-		t.next("insert time");
+		// auto new_ver = multi_version_batch_delete_sorted(P_set, old_version);
+		// t.next("delete time");
+		// P_set = get_sorted_points(P_insert);
+		// new_ver = multi_version_batch_insert_sorted(P_set, new_ver);
+		// t.next("insert time");
 
 		// t.next("garbage-collect time");
 		// cout << "base version size: " << collect_records(old_version).size() << endl;
@@ -462,7 +492,9 @@ namespace ZDTree{
 		if (!node1){	//	case1, node1 is empty, we need to add all points in node2
 			// utils::fetch_and_add(&case1, 1);
 			sequence<Point> add = {}, remove = {};
-			add = collect_records(node2);
+
+			add = collect_records(node2);			
+
 			return make_tuple(add, remove);
 		}
 		if (!node2){	//	case1, node2 is empty, we need to remove all points in node1
@@ -516,48 +548,32 @@ namespace ZDTree{
 
 		//	case overlapped, need to handle multiple cases
 		/* Case 0: no difference */
-		if (node1 == node2){
-			// cout << "go to 0" << endl;
-			return;
-		}
+		if (node1 == node2) return;
 		/* Case 1: node1 is empty, add all points from node2 */
 		if (!node1){
-			// cout << "go to 11" << endl;
 			range_report_node(node2, query_mbr, cur_mbr, x_prefix, y_prefix, b, x_splitter, ret_diff.add_cnt, ret_diff.add);
-			// auto add = collect_records(node2, query_mbr, cur_mbr, x_prefix, y_prefix, b, x_splitter);
 			return;
 		}
 		/* Case 1: node2 is empty, remove all points from node1 */
 		if (!node2){
-			// cout << "go to 12" << endl;
-			// auto remove = parlay::sequence<Point>::uninitialized(node1->get_num_points());
-			// size_t cnt = 0;
 			range_report_node(node1, query_mbr, cur_mbr, x_prefix, y_prefix, b, x_splitter, ret_diff.remove_cnt, ret_diff.remove);
-			// auto remove = collect_records(node1, query_mbr, cur_mbr, x_prefix, y_prefix, b, x_splitter);
-			// return make_tuple(add, remove);
 			return;
 		}
 		/* Case 2: two leaf nodes, need to scan both */
 		if (node1->is_leaf() && node2->is_leaf()){
-			// cout << "go to 21" << endl;
 			leaf_leaf_diff(node1, node2, query_mbr, ret_diff);
-			// return make_tuple(add, remove);	
 			return;	
 		}
 		/* Case 3: one of the nodes is leaf */
 		if (node1->is_leaf() && !node2->is_leaf()){
-			// cout << "go to 31" << endl;
 			auto P = static_cast<LeafNode*>(node1.get())->records;
 			leaf_inte_diff(P, 0, P.size(), node2, query_mbr, cur_mbr, x_prefix, y_prefix, b, x_splitter, ret_diff);
-			// return make_tuple(add, remove);
 			return;
 		}
 		/* Case 3: the other possibility */
 		if (!node1->is_leaf() && node2->is_leaf()){
-			// cout << "go to 32" << endl;
 			auto P = static_cast<LeafNode*>(node2.get())->records;
 			leaf_inte_diff(P, 0, P.size(), node1, query_mbr, cur_mbr, x_prefix, y_prefix, b, x_splitter, ret_diff, true);
-			// return make_tuple(add, remove);
 			return;
 		}
 		/* Case 4: two interior nodes, not fully overlapped */
@@ -585,22 +601,11 @@ namespace ZDTree{
 
 	//	current return conflict only
 	auto Tree::merge(shared_ptr<BaseNode> &base, shared_ptr<BaseNode> &node1, shared_ptr<BaseNode> &node2){
-		parlay::internal::timer t("merge", false);
 		auto [add1, remove1] = two_version_diff(base, node1);
 		auto [add2, remove2] = two_version_diff(base, node2); 
-		t.next("diff time");
-
-		// cout << "1 sz: " << add1.size() << ", " << remove1.size() << endl; 
-		// cout << "2 sz: " << add2.size() << ", " << remove2.size() << endl; 
-		// for (auto &pt: add1) {cout << pt.id << ":" << pt.x << "," << pt.y << " ";} cout << endl;
-		// for (auto &pt: remove1) {cout << pt.id << ":" << pt.x << "," << pt.y << " ";} cout << endl;
 
 		auto [insert1, delete1, update1] = filter_diff_results(add1, remove1);
-		// cout << insert1.size() << " " << delete1.size() << " " << update1.size() << endl;
-		// for (auto &pt: update1) {cout << pt.id << ":" << pt.x << "," << pt.y << " ";} cout << endl;
 		auto [insert2, delete2, update2] = filter_diff_results(add2, remove2);
-		// cout << insert2.size() << " " << delete2.size() << " " << update2.size() << endl;
-		// for (auto &pt: update2) {cout << pt.id << ":" << pt.x << "," << pt.y << " ";} cout << endl;
 
 		auto [no_conflict_insert, conflict_insert] = merge_by_id_with_conflict(insert1, insert2);	// insert conflict
 		auto [no_conflict_update, conflict_update] = merge_by_id_with_conflict(update1, update2);	// update conflict
@@ -610,10 +615,8 @@ namespace ZDTree{
 
 		no_conflict_delete.append(no_conflict_delete1);
 		conflict_delete.append(conflict_delete1);
-		t.next("conflict time");
 
 		auto new_ver = commit(base, no_conflict_insert, no_conflict_delete);
-		t.next("commit time");
 
 		return make_tuple(new_ver, conflict_insert, conflict_update, conflict_delete);
 	}
@@ -1042,33 +1045,14 @@ namespace ZDTree{
 		if (x == nullptr){
 			cout << "Error, nullptr found" << endl;
 			cout << l << ", " << r << endl;
+			for (auto i = l; i < r; i++){
+				cout << P[i] << endl;
+			}
 		}
 		if (x->is_leaf()){
 			auto cur_leaf = static_cast<LeafNode*>(x.get());
 			cur_leaf->records = get_delete_p(cur_leaf->records, P, l, r);
-
-			// for (auto i = l; i < r; i++) cout << P[i].morton_id << ", " << P[i].id << " "; cout << endl;
-			// for (auto pt: cur_leaf->records) cout << pt.morton_id << ", " << pt.id << " "; cout << endl;
-
-			// parlay::sequence<bool> to_remove(cur_leaf->records.size(), true);
-			// auto not_in = [&](auto x){
-			// 	for (size_t i = l; i < r; i++){
-			// 		if (x.id == P[i].id) return false;
-			// 	}
-			// 	return true;
-			// };
-			// auto for_debug = parlay::filter(cur_leaf->records, not_in);
-
-			// auto [added, removed] = merge_pts(cur_leaf->records, P.substr(l, r - l));
-			// cur_leaf->records = removed;
-
-			// if (for_debug != removed){
-			// 	cout << "[Error]" << for_debug.size() << ", " << removed.size() << endl;
-			// }
-
-			if (!cur_leaf->records.size()) {
-				x.reset();
-			}
+			if (!cur_leaf->records.size()) x.reset();
 			return;
 		}
 		// visited_inte++;
@@ -1091,7 +1075,7 @@ namespace ZDTree{
 			}; 
 		};
 
-		par_do_if(r - l >= granularity_cutoff,
+		par_do_if(r - l >= 256,
 			delete_left,
 			delete_right); 
 
@@ -1301,6 +1285,7 @@ namespace ZDTree{
 	
 
 	size_t Tree::num_of_nodes(){
+		cout << "[INFO] zdtree # of versions: " << multi_version_roots.size() << endl;
 		unordered_map<shared_ptr<BaseNode>, bool> node_map;
 		for (auto &rt: multi_version_roots){
 			if (rt == nullptr){
@@ -1308,7 +1293,7 @@ namespace ZDTree{
 				continue;
 			}
 			node_traverse(rt, node_map);
-			cout << "current version tree nodes: " << node_map.size() << endl;
+			// cout << "current version tree nodes: " << node_map.size() << endl;
 		}
 		return node_map.size();
 	}

@@ -302,7 +302,6 @@ struct aug_node : public basic_node<balance,
     }
     return total;
   }
-
 };
 
 }  // namespace cpam

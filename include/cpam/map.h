@@ -1,12 +1,12 @@
 #pragma once
 
-using namespace std;
-
 // *******************************************
 //   MAPS
 // *******************************************
 
 namespace cpam {
+
+using namespace std;
 
 template <class _Entry, class Join_Tree>
 class map_ {
@@ -704,12 +704,28 @@ public:
 
   template <class F>
   size_t size_in_bytes(const F& f) const {
+    // return Tree::size_in_bytes(root, f);
     return Tree::size_in_bytes(root, f);
+  }
+
+  template <class F>
+  size_t size_in_bytes(const F& f, std::unordered_map<size_t, bool> &mmp) const {
+    // return Tree::size_in_bytes(root, f);
+    // cout << "called here" << endl;
+    auto [inte, leaf] = Tree::size_in_bytes_all(root, f, mmp);
+    cout << "total inte size: " << 1.0 * inte / 1024.0 / 1024.0 << " MB" << endl;
+    cout << "total leaf size: " << 1.0 * leaf / 1024.0 / 1024.0 << " MB" << endl;
+    return inte + leaf; 
   }
 
   // Returns a pair of the (number of internal nodes, number of leaf nodes).
   std::tuple<size_t, size_t, size_t> node_stats() const {
     return Tree::node_stats(root);
+  }
+
+  // Returns a pair of the (number of internal nodes, number of leaf nodes).
+  std::tuple<size_t, size_t, size_t> node_stats(std::unordered_map<size_t, bool> &mmp) const {
+    return Tree::node_stats(root, mmp);
   }
 
   size_t ref_cnt() const { return Tree::ref_cnt(root); }

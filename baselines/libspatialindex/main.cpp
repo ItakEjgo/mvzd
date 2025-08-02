@@ -428,14 +428,10 @@ void run(int argc, char** argv){
 
     if (task == "build"){
         auto build_mvrtree = [&](){
-            ISpatialIndex* mvrtree = nullptr;
-            MVRTest::build_test(P, mvrtree);
-            delete mvrtree;
+            MVRTest::build_test(P);
         };
         auto build_mv3rtree = [&](){
-            ISpatialIndex* mvrtree = nullptr;   //  mvrtree part
-            ISpatialIndex* rtree = nullptr; //  3d rtree part
-            MV3RTest::build_test(P, mvrtree, rtree);
+            MV3RTest::build_test(P);
         };
         if (algo == "mvrtree"){
             build_mvrtree();
@@ -445,72 +441,89 @@ void run(int argc, char** argv){
         }
         else if (algo == "combined"){
             build_mvrtree();
+            malloc_trim(0);  
             build_mv3rtree();
         }
         else{
             cout << "not supported algorithm." << endl;
         }
     }
-    else if (task == "batch-insert"){
-        if (!cmd.getOption("-b")){
-            for (auto batch_factor = 10; batch_factor <= 100; batch_factor += 10){
-                if (algo == "mvrtree"){
-                    MVRTest::batch_insert_test(P, batch_factor);
-                }
-                else if (algo == "mv3rtree"){
-                    MV3RTest::batch_insert_test(P, batch_factor);
-                }
-                else if (algo == "combined"){
-                    MVRTest::batch_insert_test(P, batch_factor);
-                    MV3RTest::batch_insert_test(P, batch_factor);
-                }
-                else{
-                    cout << "not supported algorithm." << endl;
-                }
-            }
+
+    if (task == "batch-insert"){
+        parlay::sequence<size_t> batch_sizes = {
+			10000,
+			20000,
+			50000,
+			100000,
+			200000,
+			500000,
+			1000000,
+			2000000,
+			5000000,
+			10000000,
+			20000000,
+			50000000,
+			100000000
+		};
+        if (algo == "mvrtree"){
+            MVRTest::batch_insert_test(P, batch_sizes);
+        }
+        if (algo == "mv3rtree"){
+            MV3RTest::batch_insert_test(P, batch_sizes);
         }
     }
-    else if (task == "batch-delete"){
-        if (!cmd.getOption("-b")){
-            for (auto batch_factor = 10; batch_factor <= 100; batch_factor += 10){
-                if (algo == "mvrtree"){
-                    MVRTest::batch_delete_test(P, batch_factor);
-                }
-                else if (algo == "mv3rtree"){
-                    MV3RTest::batch_delete_test(P, batch_factor);
-                }
-                else if (algo == "combined"){
-                    MVRTest::batch_delete_test(P, batch_factor);
-                    MV3RTest::batch_delete_test(P, batch_factor);
-                }
-                else{
-                    cout << "not supported algorithm." << endl;
-                }
-            }
+
+    if (task == "batch-delete"){
+         parlay::sequence<size_t> batch_sizes = {
+			10000,
+			20000,
+			50000,
+			100000,
+			200000,
+			500000,
+			1000000,
+			2000000,
+			5000000,
+			10000000,
+			20000000,
+			50000000,
+			100000000
+		};
+
+        if (algo == "mvrtree"){
+            MVRTest::batch_delete_test(P, batch_sizes);
+        }
+        if (algo == "mv3rtree"){
+            MV3RTest::batch_delete_test(P, batch_sizes);
         }
     }
-    else if (task == "range-count"){
-        // if (!cmd.getOption("-r")){
-		// 	cout << "[Error]: <Path-to-Range-Query> is not specified." << endl;
-        //     return;
-		// }
+
+    IStorageManager* storageManager = nullptr;
+    ISpatialIndex* mvrtree = nullptr;
+    MVRTest::build_mvrtree(storageManager, mvrtree, P);
+    // cout << mvrtree << endl;
+
+    if (task == "range-report"){
         string query_file = cmd.getOptionValue("-r");
-        // std::cout << "Return type: " << typeid(geobase::read_range_query(query_file, 8, maxSize)).name() << std::endl;
-
         auto [cnt, query] = geobase::read_range_query(query_file, 8, maxSize);
-        // parlay::sequence<size_t> cnt = {1};
-        // parlay::sequence<geobase::Bounding_Box> query = {geobase::Bounding_Box(geobase::Point(18, 50), geobase::Point(25, 55))};
-
-        // auto query = geobase::read_range_query(query_file, 8, maxSize);
         MVRTest::range_count_test<MyVisitor>(P, query, cnt);
     }
-    else if (task == "knn"){
-        for (size_t k = 10; k <= 100; k += 10){
+    if (task == "knn"){
+        parlay::sequence<size_t> k_vals = {
+            1,
+            2,
+            5,
+            10,
+            20,
+            50,
+            100
+        };
+        for (auto &k: k_vals){
             cout << "[INFO] k = " << k << endl;
-            MVRTest::knn_test<NNVisitor>(P, k);
+            MVRTest::knn_test<NNVisitor>(mvrtree, P, k);
         }    
     }
-    else if (task == "spatial-diff"){
+    if (task == "spatial-diff"){
         string query_file = cmd.getOptionValue("-r");
         auto [cnt, query] = geobase::read_range_query(query_file, 8, maxSize);
         size_t batch_size = 10000;
@@ -545,13 +558,33 @@ void run(int argc, char** argv){
             cout << "[INFO] Dealing with Ratio: " << ratio << endl;
             MVRTest::spatial_diff_test(P, query, batch_size, ratio);
         }
-
-
-    }
-    else{
-        cout << "ERROR, Unsupported task." << endl;
     }
 
+    if (task == "multi-version-test"){
+		if (!cmd.getOption("-mv")){
+			cout << "[ERROR]: <Dir-to-Multi-Version> is not specified." << endl;
+		}
+		else{
+            string mv_dir = cmd.getOptionValue("-mv");
+            if (algo == "mvrtree"){
+                // MVRTest::multi_version_test(P, mv_dir, 18, 7);
+                MVRTest::multi_version_test(P, mv_dir, 14, 11);   // Japan
+            }
+            else if (algo == "mv3rtree"){
+                // MV3RTest::multi_version_test(P, mv_dir, 18, 7);
+                MV3RTest::multi_version_test(P, mv_dir, 14, 11);   // Japan
+            }
+            else{
+                MVRTest::multi_version_test(P, mv_dir, 18, 7);
+                malloc_trim(0);
+                MV3RTest::multi_version_test(P, mv_dir, 18, 7);
+            }
+		}
+		return;
+	}
+
+    delete mvrtree;
+    delete storageManager;
 }
 
 int main(int argc, char** argv) {

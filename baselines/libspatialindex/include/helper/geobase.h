@@ -49,7 +49,7 @@ namespace geobase
         unsigned long long morton_id;
         Point() {}
         Point(FT _x, FT _y) : x(_x), y(_y) {}
-        Point(unsigned _id, FT _x, FT _y) : id(_id), x(_x), y(_y)
+        Point(size_t _id, FT _x, FT _y) : id(_id), x(_x), y(_y)
         {
             // morton_id = mortonIndex();
             // morton_id = interleave_bits();
@@ -491,7 +491,7 @@ namespace geobase
     }
 
     template <typename Pset>
-    auto shuffle_point(Pset &P, size_t substr_size = -1)
+    auto shuffle_point(Pset &P, size_t substr_size = 0)
     {
         auto n = P.size();
         parlay::sequence<Point> rand_p(n);

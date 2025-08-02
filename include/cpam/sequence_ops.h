@@ -396,6 +396,40 @@ struct sequence_ops : Tree {
     return Tree::node_join(P.first, P.second, r);
   }
 
+  template<class F>
+  static std::pair<size_t, size_t> size_in_bytes_all(node* a, const F& f, std::unordered_map<size_t, bool> &mmp){
+    if (!a) return {0, 0};
+    auto a_conv = reinterpret_cast<size_t>(a);
+    size_t inte, leaf;
+    inte = leaf = 0;
+    if (Tree::is_compressed(a)){
+      if (!mmp[a_conv]){
+        auto c = Tree::cast_to_compressed(a);
+        leaf += c->size_in_bytes;
+        auto fn = [&] (const auto& et) {
+          leaf += f(et);
+        };
+        Tree::iterate_seq(c, fn);
+        mmp[a_conv] = true;
+      }
+      }
+      else{
+      if (!mmp[a_conv]){
+        auto r = Tree::cast_to_regular(a);
+        auto [t_inte, t_leaf] = size_in_bytes_all(r->lc, f, mmp);
+        inte += t_inte;
+        leaf += t_leaf;
+        std::tie(t_inte, t_leaf) = size_in_bytes_all(r->rc, f, mmp);
+        inte += t_inte;
+        leaf += t_leaf;
+        inte += sizeof(regular_node);
+        inte += f(Tree::get_entry(r));
+        mmp[a_conv] = true;
+      }
+    }
+    // return std::make_tuple(inte, leaf);
+    return {inte, leaf};
+  }
 
   // F applied to entries.
   template <class F>
@@ -449,6 +483,31 @@ struct sequence_ops : Tree {
 
     return {internal, leaf, leaf_sizes};
   }
+
+  // Returns a pair of the (number of internal nodes, number of leaf nodes,
+  // total size of leaf nodes).
+  static std::tuple<size_t, size_t, size_t> node_stats(node* a, std::unordered_map<size_t, bool> &mmp) {
+    auto a_conv = reinterpret_cast<size_t>(a);
+    if (!a || mmp[a_conv]) return {0, 0, 0};
+
+    mmp[a_conv] = true;
+
+    if (Tree::is_compressed(a)) {
+      return {0, 1, Tree::size(a)};
+    }
+
+    size_t internal = 0; size_t leaf = 0; size_t leaf_sizes = 0;
+    auto r = Tree::cast_to_regular(a);
+    auto l_ret = node_stats(r->lc, mmp);
+    auto r_ret = node_stats(r->rc, mmp);
+
+    internal += std::get<0>(l_ret) + std::get<0>(r_ret) + 1;
+    leaf += std::get<1>(l_ret) + std::get<1>(r_ret);
+    leaf_sizes += std::get<2>(l_ret) + std::get<2>(r_ret);
+
+    return {internal, leaf, leaf_sizes};
+  }
+
 
   template <class F>
   static std::tuple<bool, ET, ET> is_sorted_impl(node* a, const F& less) {
