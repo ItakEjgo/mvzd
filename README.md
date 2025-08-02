@@ -43,17 +43,12 @@ Our experimental results show that SILVA can achieve  **100x faster operations**
 .
 
 ├── baselines/ # Comparison implementations
-
-│ ├── libspatialindex/ # MVRtree & MV3Rtree
-
-│ └── boostRtree/ # Rtree
-
+|   ├── libspatialindex/ # MVRtree & MV3Rtree
+|   └── boostRtree/ # Rtree
 ├── src/ # SILVA core
-
 ├── include/ # PaC-Tree libraries
-
 ├── parlaylib/ # parallel primitives
-
+Other files.
 
 ## Compilation
 bash
