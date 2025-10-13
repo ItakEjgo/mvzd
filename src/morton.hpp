@@ -180,6 +180,77 @@ namespace Morton{
 		return m1;
 	}	
 
+		static bool save_to_file(const zmap& m1, const std::string& filename) {
+		std::ofstream file(filename);
+		auto all_entries = zmap::entries(m1);
+		std::ostringstream oss;
+		for (const auto& entry : all_entries) {
+			auto& [key, point] = entry;
+			oss << "E " << key.first << " " << key.second << " ";
+			oss << point.id << " " << point.x << " " << point.y << " " << point.morton_id;
+			oss << " | ";
+		}
+		file << oss.str();
+		file.close();
+		return true;
+	}
+
+	static par parse_entry(const std::string& entryStr) {
+        if (entryStr.empty() || entryStr[0] != 'E') {
+            return {{0, 0}, Point()};
+        }
+        
+        std::stringstream ss(entryStr);
+        std::string type;
+        ss >> type;
+        
+        if (type != "E") return {{0, 0}, Point()};
+        
+        size_t key1, key2;
+        size_t id;
+        double x, y;
+        size_t morton_id;
+        
+        if (ss >> key1 >> key2 >> id >> x >> y >> morton_id) {
+            Point point;
+            point.id = id;
+            point.x = x;
+            point.y = y;
+            point.morton_id = morton_id;
+            
+            return {{key1, key2}, point};
+        }
+        
+        return {{0, 0}, Point()};
+    }
+
+	static zmap read_from_file(const std::string& filename) {
+        std::ifstream file(filename);
+        
+        std::string data;
+        std::getline(file, data);
+        file.close();
+        
+        parlay::sequence<par> entries;
+        std::stringstream ss(data);
+        std::string item;
+        
+        while (std::getline(ss, item, '|')) {
+            size_t start = item.find_first_not_of(" ");
+            size_t end = item.find_last_not_of(" ");
+            if (start == std::string::npos || end == std::string::npos) continue;
+            
+            std::string nodeStr = item.substr(start, end - start + 1);
+            if (nodeStr.empty()) continue;
+            
+            auto entry = parse_entry(nodeStr);
+			entries.push_back(entry);
+        }
+        
+		zmap m1(entries);
+        return m1;
+    }
+
 	template<typename PT, typename M>
 	auto CPAMZ_insert(PT &P, M &mmp, bool use_hilbert = false){
 		size_t n = P.size();

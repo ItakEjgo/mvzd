@@ -64,6 +64,8 @@ namespace ZDTree{
 		// sequence<Point> records;
 		sequence<Point> records = sequence<Point>::uninitialized(32);
 
+    	LeafNode() = default;
+
 		template<typename Records>
 		LeafNode(Records &r){
 			if (r.size() > 32){
@@ -102,6 +104,166 @@ namespace ZDTree{
 			for (size_t i = 0; i < records.size(); i++){
 				cout << "(" << records[i].x << ", " << records[i].y << ")" << endl; 
 			}
+		}
+	};
+
+	// store tree into a file
+	class TreeSerializer {
+	public:
+		string serialize(shared_ptr<BaseNode> root) {
+			if (!root) return "";
+			
+			ostringstream oss;
+			queue<shared_ptr<BaseNode>> q;
+			q.push(root);
+			
+			while (!q.empty()) {
+				auto node = q.front();
+				q.pop();
+				
+				if (node) {
+					if (node->is_leaf()) {
+						auto leaf = dynamic_pointer_cast<LeafNode>(node);
+						oss << "L " << leaf->records.size();
+						for (const auto& point : leaf->records) {
+							oss << " " << point.id << " " << point.x << " " << point.y;
+						}
+					} else {
+						auto inte = dynamic_pointer_cast<InteNode>(node);
+						oss << "I " << inte->num_pts;
+						q.push(inte->l_son);
+						q.push(inte->r_son);
+					}
+					oss << " | ";
+				} else {
+					oss << "N | ";
+				}
+			}
+			return oss.str();
+		}
+		
+		// 从字符串反序列化二叉树[2](@ref)[6](@ref)
+		shared_ptr<BaseNode> deserialize(const string& data) {
+			if (data.empty()) return nullptr;
+			
+			vector<string> nodeStrings;
+			stringstream ss(data);
+			string item;
+			while (getline(ss, item, '|')) {
+				size_t start = item.find_first_not_of(" ");
+				size_t end = item.find_last_not_of(" ");
+				if (start != string::npos && end != string::npos) {
+					nodeStrings.push_back(item.substr(start, end - start + 1));
+				}
+			}
+			
+			if (nodeStrings.empty()) return nullptr;
+			
+			queue<shared_ptr<BaseNode>> q;
+			shared_ptr<BaseNode> root = parseNode(nodeStrings[0]);
+			if (!root) return nullptr;
+			
+			q.push(root);
+			size_t index = 1;
+			
+			while (!q.empty() && index < nodeStrings.size()) {
+				auto parent = q.front();
+				q.pop();
+				
+				if (parent && !parent->is_leaf()) {
+					auto inteNode = dynamic_pointer_cast<InteNode>(parent);
+					
+					if (index < nodeStrings.size()) {
+						inteNode->l_son = parseNode(nodeStrings[index]);
+						if (inteNode->l_son) {
+							q.push(inteNode->l_son);
+						}
+						index++;
+					}
+					
+					if (index < nodeStrings.size()) {
+						inteNode->r_son = parseNode(nodeStrings[index]);
+						if (inteNode->r_son) {
+							q.push(inteNode->r_son);
+						}
+						index++;
+					}
+				}
+			}
+			
+			return root;
+		}
+		
+	private:
+		// 解析单个节点数据[3](@ref)[8](@ref)
+		shared_ptr<BaseNode> parseNode(const string& nodeStr) {
+			if (nodeStr.empty() || nodeStr == "N") {
+				return nullptr;
+			}
+			
+			stringstream ss(nodeStr);
+			string type;
+			ss >> type;
+			
+			if (type == "L") {
+				size_t pointCount;
+				ss >> pointCount;
+				
+				auto leaf = make_shared<LeafNode>();
+				for (size_t i = 0; i < pointCount; ++i) {
+					FT x, y;
+					size_t id;
+					if (ss >> id >> x >> y) {
+						leaf->records.push_back(Point(x, y));
+					}
+				}
+				return leaf;
+				
+			} else if (type == "I") {
+				size_t num_pts;
+				ss >> num_pts;
+				
+				auto inte = make_shared<InteNode>();
+				inte->num_pts = num_pts;
+				return inte;
+			}
+			
+			return nullptr;
+		}
+	};	
+
+	// ==================== 文件操作工具 ====================
+	class FileUtils {
+	public:
+		static bool saveTreeToFile(shared_ptr<BaseNode> root, const string& filename) {
+			TreeSerializer serializer;
+			string data = serializer.serialize(root);
+			
+			ofstream file(filename);
+			if (!file.is_open()) {
+				cerr << "无法打开文件: " << filename << endl;
+				return false;
+			}
+			
+			file << data;
+			file.close();
+			cout << "✅ 树已保存到文件: " << filename << endl;
+			return true;
+		}
+		
+		static shared_ptr<BaseNode> loadTreeFromFile(const string& filename) {
+			ifstream file(filename);
+			if (!file.is_open()) {
+				cerr << "无法打开文件: " << filename << endl;
+				return nullptr;
+			}
+			
+			string data;
+			getline(file, data);
+			file.close();
+			
+			TreeSerializer serializer;
+			return serializer.deserialize(data);
 		}
 	};
 

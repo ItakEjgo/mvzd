@@ -161,16 +161,73 @@ void run(int argc, char** argv){
 
 	/* read input file */
 	ifstream fin(input_file);
-	parlay::sequence<geobase::Point> P;
-	largest_mbr = geobase::read_pts(P, fin, is_real);	//	change to true if id is contained.
 
-	if (task == "debug"){
-		cout << "total points: " << P.size() << endl;
-		get_sorted_points(P);
-		count_duplicate_zvalues(P);
+	bool deal_box = true;
+
+	if (deal_box){
+		parlay::sequence<geobase::Rectangle> R;
+		geobase::read_rectangles(R, fin, is_real);
+
+		/* build */
+		if (task == "build"){
+			CPAMBB_BOX::build_test(R);
+		}
+
+		/* batch-insert */
+		if (task == "batch-insert"){
+			// tested batch-size
+			parlay::sequence<size_t> batch_sizes = {
+				10000,
+				20000,
+				50000,
+				100000,
+				200000,
+				500000,
+				1000000,
+				2000000,
+				5000000,
+				10000000,
+				20000000,
+				50000000,
+				100000000
+			};
+			CPAMBB_BOX::batch_insert_test(R, batch_sizes);
+			
+		}
+
+		/* batch-delete */
+		if (task == "batch-delete"){
+			// tested batch-size
+			parlay::sequence<size_t> batch_sizes = {
+				10000,
+				20000,
+				50000,
+				100000,
+				200000,
+				500000,
+				1000000,
+				2000000,
+				5000000,
+				10000000,
+				20000000,
+				50000000,
+				100000000
+			};
+			CPAMBB_BOX::batch_delete_test(R, batch_sizes);
+		}
+
+		if (task == "intersect-with"){
+			string query_file = cmd.getOptionValue("-r");
+			auto [cnt, range_report_querys] = geobase::read_range_query(query_file, 8, maxSize);
+			range_report_querys = range_report_querys.substr(0, 100);
+			CPAMBB_BOX::intersects_test(R, range_report_querys);
+		}
+
 		return;
 	}
 
+	parlay::sequence<geobase::Point> P;
+	largest_mbr = geobase::read_pts(P, fin, is_real);	//	change to true if id is contained.
 	/* build test */
 	if (task == "build"){
 		if (algo == "mvzd"){
@@ -212,9 +269,9 @@ void run(int argc, char** argv){
 			100000000
 		};
 		if (algo == "combined"){
-			cout << "start batch insert" << endl;
-			ZDTest::batch_insert_test(P, batch_sizes);
-			CPAMZ::batch_insert_test(P, batch_sizes);
+			// cout << "start batch insert" << endl;
+			// ZDTest::batch_insert_test(P, batch_sizes);
+			// CPAMZ::batch_insert_test(P, batch_sizes);
 			CPAMBB::batch_insert_test(P, batch_sizes);
 		}
 	}
@@ -223,19 +280,19 @@ void run(int argc, char** argv){
 	if (task == "batch-delete"){
 		// tested batch-size
 		parlay::sequence<size_t> batch_sizes = {
-			// 10000,
-			// 20000,
-			// 50000,
-			// 100000,
-			// 200000,
-			// 500000,
-			// 1000000,
-			// 2000000,
-			// 5000000,
+			10000,
+			20000,
+			50000,
+			100000,
+			200000,
+			500000,
+			1000000,
+			2000000,
+			5000000,
 			10000000,
-			// 20000000,
-			// 50000000,
-			// 100000000
+			20000000,
+			50000000,
+			100000000
 		};
 
 		// auto tst = P.substr(0, 10);
@@ -249,8 +306,8 @@ void run(int argc, char** argv){
 		// }
 
 		if (algo == "combined"){
-			ZDTest::batch_delete_test(P, batch_sizes);
-			CPAMZ::batch_delete_test(P, batch_sizes);
+			// ZDTest::batch_delete_test(P, batch_sizes);
+			// CPAMZ::batch_delete_test(P, batch_sizes);
 			CPAMBB::batch_delete_test(P, batch_sizes);
 		}
 	}

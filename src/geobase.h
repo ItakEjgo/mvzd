@@ -155,6 +155,22 @@ namespace geobase
 
     typedef pair<Point, Point> Bounding_Box;
 
+    struct Rectangle{
+        size_t id;
+        FT x_low, y_low, x_high, y_high;
+        Point get_centroid(){
+            return Point((x_low + x_high) * 0.5, (y_low + y_high) * 0.5);
+        }
+        Rectangle(){}
+        Rectangle(FT x, FT y, FT xx, FT yy): x_low(x), y_low(y), x_high(xx), y_high(yy){}
+        Rectangle(size_t idx, FT x, FT y, FT xx, FT yy):id(idx), x_low(x), y_low(y), x_high(xx), y_high(yy){}
+        friend std::ostream &operator<<(std::ostream &os, const Rectangle &r){
+            os << fixed << setprecision(6) << r.id << ": (" << r.x_low << ", " << r.y_low << "), (" << r.x_high << ", " << r.y_high << ")";
+            // os << "(" << p.x << ", " << p.y << ")";
+            return os;
+        }
+    };
+
     struct diff_type{
         size_t add_cnt, remove_cnt;
         parlay::sequence<Point> add, remove;
@@ -199,6 +215,26 @@ namespace geobase
             remove = parlay::sequence<Point>::uninitialized(remove_sz);
         }
     };
+
+    template <typename T>
+    auto read_rectangles(T &P, ifstream &fin, bool real_data = false){
+        size_t n, d;
+        // FT x_low, x_high, y_low, y_high;
+        fin >> n >> d;
+        P.resize(n);
+        if (real_data){
+            for (size_t i = 0; i < n; i++){
+                fin >> P[i].id >> P[i].x_low >> P[i].y_low >> P[i].x_high >> P[i].y_high;
+                // P[i] = Rectangle(id, x_low, y_low, x_high, y_high);
+            }
+            return;
+        }
+        for (size_t i = 0; i < n; i++){
+            fin >> P[i].id >> P[i].x_low >> P[i].y_low >> P[i].x_high >> P[i].y_high;
+            // P[i] = Rectangle(i, x_low, y_low, x_high, y_high);
+        }
+        return;
+    }
 
     template <class T>
     auto read_pts(T &P, ifstream &fin, bool real_data = false)
@@ -369,6 +405,23 @@ namespace geobase
         {
             if (minc_x == small_mbr.first.x && maxc_x == small_mbr.second.x &&
                 minc_y == small_mbr.first.y && maxc_y == small_mbr.second.y)
+                return 1;
+            return 0;
+        }
+        return -1;
+    }
+
+    template <class REC, class MBR>
+    int mbr_mbr_relation(REC &small_mbr, MBR &large_mbr)
+    {
+        auto minc_x = max(small_mbr.x_low, large_mbr.first.x);
+        auto minc_y = max(small_mbr.y_low, large_mbr.first.y);
+        auto maxc_x = min(small_mbr.x_high, large_mbr.second.x);
+        auto maxc_y = min(small_mbr.y_high, large_mbr.second.y);
+        if (minc_x <= maxc_x && minc_y <= maxc_y)
+        {
+            if (minc_x == small_mbr.x_low && maxc_x == small_mbr.x_high &&
+                minc_y == small_mbr.y_low && maxc_y == small_mbr.y_high)
                 return 1;
             return 0;
         }
@@ -552,6 +605,21 @@ namespace geobase
         return rand_p;
     }
 
+    template <typename Rset>
+    auto shuffle_box(Rset &R, size_t substr_size = 0){
+        auto n = R.size();
+        parlay::sequence<Rectangle> rand_r(n);
+        auto rand_seed = 233666;
+        mt19937 g(rand_seed);
+        parlay::parallel_for(0, n, [&](size_t i)
+                             { rand_r[i] = R[i]; });
+        shuffle(rand_r.begin(), rand_r.end(), g);
+        if (substr_size > 0){
+            rand_r = rand_r.substr(0, substr_size);
+        }
+        return rand_r; 
+    }
+
     /* Insert ratio is from 0 to 10. Insert point will add bias to id to make them unique. */
     template <typename Pset>
     auto split_insert_delete(Pset &P, size_t &insert_ratio, size_t id_bias)
@@ -570,7 +638,7 @@ namespace geobase
         cout << name << ": " << endl;
         if (end_idx == 0) end_idx = P.size();
         for (size_t i = 0; i < end_idx; i++){
-            cout << P[i] << endl;
+            cout << P[i].get_centroid().interleave_bits() << endl;
         }
     }
 

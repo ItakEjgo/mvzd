@@ -12,9 +12,11 @@
 #include "helper/time_loop.h"
 
 #include "hilbert.h"
-#include "binary_rtree.hpp"
+#include "cpambb.hpp"
+#include "cpambb_box.hpp"
 
 #define TEST	//	print for correctness check
+#define DISK
 
 using namespace std;
 using namespace geobase;
@@ -27,10 +29,140 @@ double zd_leaf_copy_time, zd_inte_copy_time;
 double leaf_time, inte_time;
 size_t visited_leaf, visited_inte;
 
+namespace CPAMBB_BOX{
+	template <typename PT>
+	void build_test(PT P){
+		CPAMBB_BOX::zmap tree;
+		auto cpambb_box_avg = time_loop(
+			3, 1.0, [&](){
+				tree.clear();
+			},
+			[&](){
+				tree = CPAMBB_BOX::map_init(P);
+			},
+		[&](){} );
+		// cout << "# of rectangles in tree: " << tree.size() << endl;
+		// auto [num_inte_nodes, num_leaf_nodes, leaf_size] = tree.node_stats();
+
+		auto f_noop = [&](const auto &et){
+			return 0;
+		};
+
+		cout << 
+		    // "[cpambb memory usage]: " << endl <<
+			// "[# of inte nodes]: " << num_inte_nodes << endl << 
+			// "[# of leaf nodes]: " << num_leaf_nodes << endl <<
+			"[tree size]: " << 1.0 * tree.size_in_bytes(f_noop) / 1024.0 / 1024.0 << " MB" << endl;
+
+		cout << "[cpambb-box]: ";
+		cout << fixed << setprecision(6) << "build time (avg): " << cpambb_box_avg << endl;
+	}
+
+	template<typename PT>
+	void batch_insert_test(PT P, parlay::sequence<size_t> &batch_sizes, bool use_hilbert = false){
+		auto n = P.size();
+		auto m1 = CPAMBB_BOX::map_init(P, use_hilbert);	//	build original tree
+		decltype(m1) m2;
+
+		auto rand_p = shuffle_box(P);
+		// auto rand_p = P; // test no shuffle here.
+
+		for (auto &num_processed: batch_sizes){
+			if (num_processed > P.size()) break;
+			auto P2 = rand_p.substr(0, num_processed);
+
+	    	parlay::parallel_for (0, P2.size(), [&](int i){
+		    	P2[i].id = n + i;
+	    	});
+			bool print_flag = true;
+	    	auto cpam_insert_avg = time_loop(
+		    	3, 1.0, [&]() {
+					m2.clear();
+				},
+		    	[&]() {
+					m2 = CPAMBB_BOX::map_insert(P2, m1, use_hilbert);
+		    	},
+	    	[&](){
+				if (print_flag){
+					cout << "# of points: " << m2.size() << endl;
+					print_flag = false;
+				}			
+			});
+
+			cout << "[batch_size]: " << num_processed << endl;
+			cout << "[cpambb-box]: ";
+			cout << fixed << setprecision(6) << "batch insert time (avg): " << cpam_insert_avg << endl;
+		}
+	}
+
+	template<typename PT>
+	void batch_delete_test(PT P, parlay::sequence<size_t> &batch_sizes, bool use_hilbert = false){
+		auto m1 = CPAMBB_BOX::map_init(P, use_hilbert);	//	build original tree
+		decltype(m1) m2;
+		// auto rand_p = shuffle_box(P);
+		auto rand_p = P;
+
+		bool print_distribution = true;
+
+		for (auto &num_processed: batch_sizes){
+			if (num_processed > P.size()) break;
+			auto P2 = rand_p.substr(0, num_processed);
+			
+			if (print_distribution){
+				geobase::print_Pset_info(P2, "Z Values Distribution", 1000);
+				cout << "=====================SPLIT=====================" << endl;
+				continue;
+			}
+
+			bool print_flag = true;
+	    	auto cpam_insert_avg = time_loop(
+		    	3, 1.0, [&]() {
+					m2.clear();
+				},
+		    	[&]() {
+					m2 = CPAMBB_BOX::map_delete(P2, m1, use_hilbert);
+		    	},
+	    	[&](){
+				if (print_flag){
+					cout << "# of points: " << m2.size() << endl;
+					print_flag = false;
+				}
+			} );
+
+			cout << "[batch_size]: " << num_processed << endl;
+			cout << "[cpambb-box]: ";
+			cout << fixed << setprecision(6) << "batch delete time (avg): " << cpam_insert_avg << endl;
+		}
+	}
+
+	template<class PT, class RQ>
+    void intersects_test(PT P, RQ querys, bool use_hilbert = false, size_t par_for_granularity = 100){
+	    auto tree = CPAMBB_BOX::map_init(P, use_hilbert);
+
+		parlay::sequence<size_t> rangeCnt(querys.size());
+		parlay::sequence<parlay::sequence<Rectangle> > rangeReport(querys.size());
+
+		for (size_t i = 0; i < querys.size(); i++){
+			auto avg_time = time_loop(
+				3, 1.0, 
+				[&]() {
+					rangeReport[i].resize(P.size());
+				},
+				[&]() {					
+					rangeCnt[i] = CPAMBB_BOX::intersects_with(tree, querys[i], rangeReport[i]);
+				},
+				[&](){} );
+			// if (rangeCnt[i] != cnt[i]){
+			// 	cout << "[ERROR] Incorrect" << endl;
+			// }
+			// else{
+				cout << fixed << setprecision(6) << rangeCnt[i] << " " << avg_time << endl;
+			// }
+		}
+	}
+}
 
 namespace CPAMBB{
-
-
 	template<typename PT>
 	void multi_version_test(PT P, string dir, int start_year = 14, int version_num = 5){
 		auto cur_year = start_year;
@@ -615,6 +747,20 @@ namespace CPAMBB{
 		if (use_hilbert) cout << "[Hilbert-CPAMBB]: ";
 		else cout << "[Zorder-CPAMBB]: ";
 		cout << fixed << setprecision(6) << "build time (avg): " << cpam_build_avg << endl;
+
+	#ifdef DISK
+		string file_name = "cpambb_disk.idx";
+		CPAMBB::save_to_file(tree, file_name);
+		cout << "[INFO ]Write to file: cpambb_disk.idx finished." << endl;
+		auto m1 = CPAMBB::read_from_file(file_name);
+		cout << "[INFO ]Read from file: cpambb_disk.idx finished." << endl;
+		tie(num_inte_nodes, num_leaf_nodes, leaf_size) = m1.node_stats();
+
+		cout << "[cpambb memory usage]: " << endl <<
+			"[# of inte nodes]: " << num_inte_nodes << endl << 
+			"[# of leaf nodes]: " << num_leaf_nodes << endl <<
+			"[tree size]: " << 1.0 * m1.size_in_bytes(f_noop) / 1024.0 / 1024.0 << " MB" << endl;
+	#endif
 	}
 
 	template<class PT, class RQ>
@@ -892,18 +1038,17 @@ namespace CPAMBB{
 			else cout << "[Zorder-CPAMBB]: ";
 			cout << fixed << setprecision(6) << "batch insert time (avg): " << cpam_insert_avg << endl;
 		}
-
 	}
 
 	template<typename PT>
 	void batch_delete_test(PT P, parlay::sequence<size_t> &batch_sizes, bool use_hilbert = false){
 		auto m1 = CPAMBB::map_init(P, use_hilbert);	//	build original tree
 		decltype(m1) m2;
-		// auto rand_p = shuffle_point(P);
+		auto rand_p = shuffle_point(P);
 
 		for (auto &num_processed: batch_sizes){
 			if (num_processed > P.size()) num_processed = P.size();
-			auto P2 = P.substr(0, num_processed);
+			auto P2 = rand_p.substr(0, num_processed);
 			bool print_flag = true;
 
 	    	auto cpam_insert_avg = time_loop(
@@ -1359,6 +1504,20 @@ namespace CPAMZ{
 		if (use_hilbert) cout << "[Hilbert-CPAMZ]: ";
 		else cout << "[Zorder-CPAMZ]: ";
 		cout << fixed << setprecision(6) << "build time (avg): " << cpam_build_avg << endl;
+
+	#ifdef DISK
+		string file_name = "cpamz_disk.idx";
+		Morton::save_to_file(tree, file_name);
+		cout << "[INFO ]Write to file: cpamz_disk.idx finished." << endl;
+		auto m1 = Morton::read_from_file(file_name);
+		cout << "[INFO ]Read from file: cpamz_disk.idx finished." << endl;
+		tie(num_inte_nodes, num_leaf_nodes, leaf_size) = m1.node_stats();
+
+		cout << "[cpamz memory usage]: " << endl <<
+			"[# of inte nodes]: " << num_inte_nodes << endl << 
+			"[# of leaf nodes]: " << num_leaf_nodes << endl <<
+			"[tree size]: " << 1.0 * m1.size_in_bytes(f_noop) / 1024.0 / 1024.0 << " MB" << endl;
+	#endif
 	}
 	
 	template<typename PT>
@@ -1412,11 +1571,11 @@ namespace CPAMZ{
 	void batch_delete_test(PT P, parlay::sequence<size_t> &batch_sizes, bool use_hilbert = false){
 		auto m1 = Morton::CPAMZ_init(P, use_hilbert);	//	build original tree
 		decltype(m1) m2;
-		// auto rand_p = shuffle_point(P);
+		auto rand_p = shuffle_point(P);
 
 		for (auto &num_processed: batch_sizes){
 			if (num_processed > P.size()) num_processed = P.size();
-			auto P2 = P.substr(0, num_processed);
+			auto P2 = rand_p.substr(0, num_processed);
 
 			bool print_flag = true;
 	    	auto cpam_insert_avg = time_loop(
@@ -2271,6 +2430,21 @@ namespace ZDTest{
 			"[memory usage for inte nodes]: " << 1.0 * stat.mem_inte_nodes / 1024.0 / 1024.0 << " MB" << endl <<
 			"[memory usage for leaf nodes]: " << 1.0 * stat.mem_leaf_nodes / 1024.0 / 1024.0 << " MB"  << endl;
         cout << fixed << setprecision(6) << "[zdtree]: build time (avg): " << zdtree_build_avg << endl;
+
+	#ifdef DISK
+		string file_name = "mvzd_disk.idx";
+		ZDTree::FileUtils::saveTreeToFile(zdtree.root, file_name);
+		cout << "[INFO ]Write to file: mvzd_disk.idx finished." << endl;
+		zdtree.clear();
+		zdtree.root = ZDTree::FileUtils::loadTreeFromFile(file_name);
+		cout << "[INFO ]Read from file: mvzd_disk.idx finished." << endl;
+
+		cout << "[loaded tree stats]: " << endl <<
+		"[# of inte nodes]: " << stat.num_inte_nodes << endl <<
+		"[# of leaf nodes]: " << stat.num_leaf_nodes << endl <<
+		"[memory usage for inte nodes]: " << 1.0 * stat.mem_inte_nodes / 1024.0 / 1024.0 << " MB" << endl <<
+		"[memory usage for leaf nodes]: " << 1.0 * stat.mem_leaf_nodes / 1024.0 / 1024.0 << " MB"  << endl;
+	#endif
     }
 
 	// template<typename PT>
@@ -2656,12 +2830,12 @@ namespace ZDTest{
 	    zdtree.build(P_set);
 	    shared_ptr<ZDTree::BaseNode> new_ver = nullptr;
 
-		// auto rand_p = shuffle_point(P);
+		auto rand_p = shuffle_point(P);
 		
 
 		for (auto &num_processed: batch_sizes){
 			if (num_processed > P.size()) num_processed = P.size();
-	    	auto P2 = P.substr(0, num_processed);	// first x%
+	    	auto P2 = rand_p.substr(0, num_processed);	// first x%
 			// bool print_flag = true;
 	    	auto zdtree_delete_avg = time_loop(
 		    	3, 1.0, [&]() {
