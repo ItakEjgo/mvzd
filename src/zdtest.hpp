@@ -899,11 +899,11 @@ namespace CPAMBB{
 	void batch_delete_test(PT P, parlay::sequence<size_t> &batch_sizes, bool use_hilbert = false){
 		auto m1 = CPAMBB::map_init(P, use_hilbert);	//	build original tree
 		decltype(m1) m2;
-		// auto rand_p = shuffle_point(P);
+		auto rand_p = shuffle_point(P);
 
 		for (auto &num_processed: batch_sizes){
 			if (num_processed > P.size()) num_processed = P.size();
-			auto P2 = P.substr(0, num_processed);
+			auto P2 = rand_p.substr(0, num_processed);
 			bool print_flag = true;
 
 	    	auto cpam_insert_avg = time_loop(
@@ -1412,11 +1412,11 @@ namespace CPAMZ{
 	void batch_delete_test(PT P, parlay::sequence<size_t> &batch_sizes, bool use_hilbert = false){
 		auto m1 = Morton::CPAMZ_init(P, use_hilbert);	//	build original tree
 		decltype(m1) m2;
-		// auto rand_p = shuffle_point(P);
+		auto rand_p = shuffle_point(P);
 
 		for (auto &num_processed: batch_sizes){
 			if (num_processed > P.size()) num_processed = P.size();
-			auto P2 = P.substr(0, num_processed);
+			auto P2 = rand_p.substr(0, num_processed);
 
 			bool print_flag = true;
 	    	auto cpam_insert_avg = time_loop(
@@ -2656,12 +2656,13 @@ namespace ZDTest{
 	    zdtree.build(P_set);
 	    shared_ptr<ZDTree::BaseNode> new_ver = nullptr;
 
-		// auto rand_p = shuffle_point(P);
+		auto rand_p = shuffle_point(P);
+		// auto rand_p = P;
 		
 
 		for (auto &num_processed: batch_sizes){
 			if (num_processed > P.size()) num_processed = P.size();
-	    	auto P2 = P.substr(0, num_processed);	// first x%
+	    	auto P2 = rand_p.substr(0, num_processed);	// first x%
 			// bool print_flag = true;
 	    	auto zdtree_delete_avg = time_loop(
 		    	3, 1.0, [&]() {

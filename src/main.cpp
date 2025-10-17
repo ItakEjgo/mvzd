@@ -212,7 +212,7 @@ void run(int argc, char** argv){
 			100000000
 		};
 		if (algo == "combined"){
-			cout << "start batch insert" << endl;
+			// cout << "start batch insert" << endl;
 			ZDTest::batch_insert_test(P, batch_sizes);
 			CPAMZ::batch_insert_test(P, batch_sizes);
 			CPAMBB::batch_insert_test(P, batch_sizes);
@@ -223,19 +223,19 @@ void run(int argc, char** argv){
 	if (task == "batch-delete"){
 		// tested batch-size
 		parlay::sequence<size_t> batch_sizes = {
-			// 10000,
-			// 20000,
-			// 50000,
-			// 100000,
-			// 200000,
-			// 500000,
-			// 1000000,
-			// 2000000,
-			// 5000000,
+			10000,
+			20000,
+			50000,
+			100000,
+			200000,
+			500000,
+			1000000,
+			2000000,
+			5000000,
 			10000000,
-			// 20000000,
-			// 50000000,
-			// 100000000
+			20000000,
+			50000000,
+			100000000
 		};
 
 		// auto tst = P.substr(0, 10);
