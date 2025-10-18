@@ -201,6 +201,44 @@ namespace geobase
         }
     };
 
+    struct Rectangle{
+        size_t id;
+        FT x_low, y_low, x_high, y_high;
+        Point get_centroid(){
+            return Point((x_low + x_high) * 0.5, (y_low + y_high) * 0.5);
+        }
+        Rectangle(){}
+        Rectangle(FT x, FT y, FT xx, FT yy): x_low(x), y_low(y), x_high(xx), y_high(yy){}
+        Rectangle(size_t idx, FT x, FT y, FT xx, FT yy):id(idx), x_low(x), y_low(y), x_high(xx), y_high(yy){}
+        friend std::ostream &operator<<(std::ostream &os, const Rectangle &r){
+            os << fixed << setprecision(6) << r.id << ": (" << r.x_low << ", " << r.y_low << "), (" << r.x_high << ", " << r.y_high << ")";
+            // os << "(" << p.x << ", " << p.y << ")";
+            return os;
+        }
+    };
+
+    template <typename T>
+    auto read_rectangles(T &P, ifstream &fin, bool real_data = false){
+        size_t n, d;
+        // FT x_low, x_high, y_low, y_high;
+        fin >> n >> d;
+        P.resize(n);
+        if (real_data){
+            for (size_t i = 0; i < n; i++){
+                fin >> P[i].id >> P[i].x_low >> P[i].y_low >> P[i].x_high >> P[i].y_high;
+                // P[i] = Rectangle(id, x_low, y_low, x_high, y_high);
+            }
+            return;
+        }
+        for (size_t i = 0; i < n; i++){
+            fin >> P[i].x_low >> P[i].y_low >> P[i].x_high >> P[i].y_high;
+            P[i].id = i + 1;
+            // P[i] = Rectangle(i, x_low, y_low, x_high, y_high);
+        }
+        return;
+    }
+
+
     template <class T>
     auto read_pts(T &P, ifstream &fin, bool real_data = false)
     {

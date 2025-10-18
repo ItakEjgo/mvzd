@@ -374,6 +374,47 @@ struct augmented_ops : Map {
     range_report_filter2(rb->rc, f, cnt, out, granularity); 
   }
 
+  template<class F, typename Out>
+  static void intersects_filter(node* b, const F &f, int64_t &cnt, Out &out, size_t granularity=kNodeLimit) {
+    if (!b) return;
+    auto cur_aug = aug_val(b);
+    auto flag = f(cur_aug.first);
+    
+    if (flag < 0) return; //exclude
+
+    if (Map::is_compressed(b)){ // leaf node
+      // visited_leaf++;
+      
+      // auto mbr = cur_aug.first;
+      // std::cout << std::fixed << std::setprecision(6) << "[(" << mbr.first.x << ", " << mbr.first.y << "), (" << mbr.second.x << ", " << mbr.second.y << ")" << "]" << std::endl;
+
+      auto f_filter = [&](const auto& et){
+        auto cur_box = std::get<1>(et); // Rectangle type
+        // auto pt_box = std::make_pair(cur_pt, cur_pt);
+        if (f(cur_box) != -1){ // intersects or contained   
+          parlay::assign_uninitialized(out[cnt++], cur_box);
+          // out[cnt++] = cur_pt; 
+        }
+      };
+      // auto cnt_bk = cnt;
+      Map::iterate_seq(b, f_filter);
+      return;
+    }
+
+    // visited_inte++;
+
+    auto rb = Map::cast_to_regular(b);
+    auto cur_box = Map::get_val(rb);
+    
+    auto flag2 = f(cur_box) != -1 ? 1 : 0;
+    intersects_filter(rb->lc, f, cnt, out, granularity); 
+    if (flag2) {
+      parlay::assign_uninitialized(out[cnt++], cur_box);
+      // out[cnt++] = cur_pt;
+    }
+    intersects_filter(rb->rc, f, cnt, out, granularity); 
+  }
+
   //  F is point-point dis, F2 is point-mbr dis
   template<typename F, typename F2, typename Out>
   static void knn_filter(node* b, const F &f, const F2 &f2, size_t &k, Out &out) {

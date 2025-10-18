@@ -14,8 +14,11 @@ namespace bgi = boost::geometry::index;
 
 // Define point and R-tree value type
 typedef bg::model::point<double, 2, bg::cs::cartesian> Point;
+typedef bg::model::box<Point> Box;
 typedef pair<Point, size_t> Value; // (point, ID)
+typedef pair<Box, size_t> Value_Box; // (box, ID)
 typedef bgi::rtree<Value, bgi::quadratic<32>> RTree;
+typedef bgi::rtree<Value_Box, bgi::quadratic<32>> RTree_Box;
 
 geobase::Bounding_Box largest_mbr;  //  largest mbr 
 size_t maxSize = 100;   //  max points in a region
@@ -151,6 +154,67 @@ void knn_test(Tree &tree, PSet &P, size_t k = 10, size_t q_num = 50000, size_t d
     );
 
     cout << fixed << setprecision(6) << "[boostRtree-KNN]: " << avg_time << endl;
+}
+
+template <typename RQ>
+void intersects_with_test(RTree_Box &rtree_box, RQ Q){
+    auto Q_conv = convert_Q(Q);
+
+    parlay::sequence<size_t> rangeReportCnt(Q.size());
+    // parlay::sequence<parlay::sequence<Point> > rangeReport(querys.size());
+    vector<vector<Value_Box> > rangeReport(Q.size());
+
+    // for (size_t i = 0; i < Q.size(); i++){
+    //     // rangeReport[i].resize(cnt[i]);
+    //     rangeReport[i].reserve(cnt[i]);
+    // }
+    #ifdef TEST
+        string file_name = "intersect_with_res/test.log"; 
+        ofstream rangeReportOut(file_name);
+    #endif
+
+    // parlay::parallel_for(0, Q.size(), [&](size_t i){
+    //     auto avg_time = time_loop(
+    //         3, 1.0, 
+    //         [&]() {
+    //             rangeReport[i].resize(0);
+    //         },
+    //         [&]() {					
+    //             rtree_box.query(bgi::intersects(bg::model::box<Point>(Q_conv[i].first, Q_conv[i].second)), std::back_inserter(rangeReport[i]));
+    //             rangeReportCnt[i] = rangeReport[i].size();
+    //         },
+    //     [&](){} );
+    // });
+    // #ifdef TEST
+    //     for (size_t i = 0; i < Q.size(); i++){
+    //         rangeReportOut << rangeReportCnt[i] << endl;
+    //     }
+    // #endif
+    // /*
+    for (size_t i = 0; i < Q.size(); i++){
+        // print_mbr(querys[i]);
+        auto avg_time = time_loop(
+            3, 1.0, 
+            [&]() {
+                rangeReport[i].resize(0);
+            },
+            [&]() {					
+                rtree_box.query(bgi::intersects(bg::model::box<Point>(Q_conv[i].first, Q_conv[i].second)), std::back_inserter(rangeReport[i]));
+                rangeReportCnt[i] = rangeReport[i].size();
+            },
+            [&](){} );
+        // if (rangeReportCnt[i] != cnt[i]){
+        //     cout << "[ERROR] Incorrect" << endl;
+        //     cout << rangeReportCnt[i] << " " << cnt[i] << endl;
+        // }
+        // else{
+        #ifdef TEST
+            rangeReportOut << rangeReportCnt[i] << endl;
+        #endif
+            cout << fixed << setprecision(6) << rangeReportCnt[i] << " " << avg_time << endl;
+        // }
+    }
+    // */
 }
 
 template<typename PT, typename RQ>
@@ -372,6 +436,19 @@ void multi_version_test(PT P, string dir, int start_year = 14, int version_num =
     }
 }
 
+void read_boxes(ifstream &fin, vector<Value_Box> &ret, bool is_real = false){
+    size_t n, d;
+    fin >> n >> d;
+    ret.resize(n);
+    size_t id;
+    double x_low, y_low, x_high, y_high;
+    for (size_t i = 0; i < n; i++){
+        fin >> id >> x_low >> y_low >> x_high >> y_high;
+        Box b(Point(x_low, y_low), Point(x_high, y_high));
+        ret[i] = make_pair(b, id);
+        // ret.emplace_back(Value_Box(Point(x_low, y_low), Point(x_high, y_high), id));
+    }
+}
 
 void run(int argc, char** argv){
     cpam::commandLine cmd(argc, argv, "[-i <Path-to-Input>] [-o <Path-to-Output>] [-t <Task-Name>] [-a <Algorithm-Name>] "
@@ -391,9 +468,50 @@ void run(int argc, char** argv){
 	string task = cmd.getOptionValue("-t");
 	string input_file = cmd.getOptionValue("-i");
 	int is_real = cmd.getOptionIntValue("-real", 0);
+	ifstream fin(input_file);
+
+    /* Testing Rectangle Queries */
+    bool deal_box = true;
+
+    if (deal_box){
+        vector<Value_Box> boxes;
+        read_boxes(fin, boxes, is_real);
+
+        if (task == "build"){
+            RTree_Box rtree_box(boxes.begin(), boxes.end());
+        }
+
+        if (task == "intersect-with"){
+            RTree_Box rtree_box(boxes.begin(), boxes.end());
+            string query_file = cmd.getOptionValue("-r");
+            auto [cnt, queries] = geobase::read_range_query(query_file, 8, maxSize);
+            queries = queries.substr(0, 100);
+            intersects_with_test(rtree_box, queries);
+        }
+
+        /* Test Code */
+        /*
+        boxes.push_back({ Box(Point(0, 0), Point(5, 5)), 1 });
+        boxes.push_back({ Box(Point(4, 4), Point(10, 10)), 2 });
+        boxes.push_back({ Box(Point(20, 20), Point(25, 25)), 3 });
+        boxes.push_back({ Box(Point(3, 3), Point(4, 4)), 3 });
+
+        bgi::rtree<Value_Box, bgi::quadratic<16> > rtree(boxes.begin(), boxes.end());
+
+        Box query_box(Point(3, 3), Point(6, 6));
+        std::vector<Value_Box> result_s;
+        rtree.query(bgi::intersects(query_box), std::back_inserter(result_s));
+
+        std::cout << "Intersecting boxes:\n";
+        for (auto const& v : result_s) {
+            std::cout << "id=" << v.second << " | " << bg::dsv(v.first) << "\n";
+        }
+        */        
+
+        return;
+    }
 
 	/* read input file */
-	ifstream fin(input_file);
 	parlay::sequence<geobase::Point> P;
 	geobase::read_pts(P, fin, is_real);	//	change to true if id is contained.
 

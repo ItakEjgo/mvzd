@@ -155,6 +155,23 @@ namespace geobase
 
     typedef pair<Point, Point> Bounding_Box;
 
+    struct Rectangle{
+        size_t id;
+        FT x_low, y_low, x_high, y_high;
+        Point get_centroid(){
+            return Point((x_low + x_high) * 0.5, (y_low + y_high) * 0.5);
+        }
+        Rectangle(){}
+        Rectangle(FT x, FT y, FT xx, FT yy): x_low(x), y_low(y), x_high(xx), y_high(yy){}
+        Rectangle(size_t idx, FT x, FT y, FT xx, FT yy):id(idx), x_low(x), y_low(y), x_high(xx), y_high(yy){}
+        friend std::ostream &operator<<(std::ostream &os, const Rectangle &r){
+            os << fixed << setprecision(6) << r.id << ": (" << r.x_low << ", " << r.y_low << "), (" << r.x_high << ", " << r.y_high << ")";
+            // os << "(" << p.x << ", " << p.y << ")";
+            return os;
+        }
+    };
+
+
     template <class T>
     auto read_pts(T &P, ifstream &fin, bool real_data = false)
     {
@@ -488,6 +505,21 @@ namespace geobase
         while (j < m)
             ret[k++] = rhs[j++];
         return ret;
+    }
+
+    template <typename Rset>
+    auto shuffle_box(Rset &R, size_t substr_size = 0){
+        auto n = R.size();
+        parlay::sequence<Rectangle> rand_r(n);
+        auto rand_seed = 233666;
+        mt19937 g(rand_seed);
+        parlay::parallel_for(0, n, [&](size_t i)
+                             { rand_r[i] = R[i]; });
+        shuffle(rand_r.begin(), rand_r.end(), g);
+        if (substr_size > 0){
+            rand_r = rand_r.substr(0, substr_size);
+        }
+        return rand_r; 
     }
 
     template <typename Pset>

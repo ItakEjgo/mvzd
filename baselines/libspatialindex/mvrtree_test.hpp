@@ -80,7 +80,24 @@ namespace MVRTest{
             auto r = TimeRegion(plow, phigh, 0, 0, d);
             tree->insertData(0, nullptr, r, pt.id);
         } 
-        // cout << *tree << endl;
+    }
+
+    template<typename PSeq>
+    auto build_mvrtree_box(IStorageManager* &storageManager, ISpatialIndex* &tree, PSeq &P, size_t d = 2){
+        /* build tree */
+        uint32_t capacity = 32;
+        id_type indexIdentifier;
+
+        storageManager = StorageManager::createNewMemoryStorageManager();
+        tree = MVRTree::createNewMVRTree(*storageManager, 0.7, capacity, capacity, 2, SpatialIndex::MVRTree::RV_RSTAR, indexIdentifier);
+
+        double plow[2], phigh[2];
+        for (auto &pt: P){
+            plow[0] = pt.x_low, plow[1] = pt.y_low;
+            phigh[0] = pt.x_high, phigh[1] = pt.y_high;
+            auto r = TimeRegion(plow, phigh, 0, 0, d);
+            tree->insertData(0, nullptr, r, pt.id);
+        } 
     }
 
     template<typename Tree, typename RQ>
@@ -115,11 +132,33 @@ namespace MVRTest{
     }
 
     template<typename Tree, typename PT>
+    auto apply_insert_box(Tree &tree, PT &P, double st = 0.0, double ed = 0.0, size_t d = 2){
+        double plow[2], phigh[2];
+        for (auto &pt: P){
+            plow[0] = pt.x_low, plow[1] = pt.y_low;
+            phigh[0] = pt.x_high, phigh[1] = pt.y_high;
+            auto r = TimeRegion(plow, phigh, st, ed, d);
+            tree->insertData(0, nullptr, r, pt.id);
+        }           
+    }
+
+    template<typename Tree, typename PT>
     auto apply_delete(Tree &tree, PT &P, double st = 0.0, double ed = 1.0, size_t d = 2){
         double plow[2], phigh[2];
         for (auto &pt: P){
             plow[0] = pt.x, plow[1] = pt.y;
             phigh[0] = pt.x, phigh[1] = pt.y;
+            auto r = TimeRegion(plow, phigh, st, ed, d);
+            tree->deleteData(r, pt.id);
+        }           
+    }
+
+    template<typename Tree, typename PT>
+    auto apply_delete_box(Tree &tree, PT &P, double st = 0.0, double ed = 1.0, size_t d = 2){
+        double plow[2], phigh[2];
+        for (auto &pt: P){
+            plow[0] = pt.x_low, plow[1] = pt.y_low;
+            phigh[0] = pt.x_high, phigh[1] = pt.y_high;
             auto r = TimeRegion(plow, phigh, st, ed, d);
             tree->deleteData(r, pt.id);
         }           
@@ -211,6 +250,34 @@ namespace MVRTest{
         delete mvrtree;
         delete storageManager;
     }
+
+    void build_test_box(parlay::sequence<geobase::Rectangle> &P, size_t d = 2){
+
+        IStorageManager* storageManager = nullptr;
+        ISpatialIndex* mvrtree = nullptr;
+        double before_mem = 0.0, after_mem = 0.0;        
+        /* Build initial version */
+        auto build_avg = time_loop(
+            1, -1.0, [&]() {
+                delete mvrtree;
+                delete storageManager;
+            },
+            [&]() {
+                before_mem = getProcessRSS_MB();
+                build_mvrtree_box(storageManager, mvrtree, P);
+                after_mem = getProcessRSS_MB();
+            },
+            [&](){});
+
+        // cout << *mvrtree << endl;
+
+        cout << "[MVRtree build time]: " << fixed << setprecision(6) << build_avg << " Seconds" << endl;
+        cout << "[MVRtree build memory]: " << fixed << setprecision(6) << after_mem - before_mem << " MB" << endl;
+        cout << fixed << setprecision(2) << "[Before/After Mem]: " << before_mem << ", " << after_mem << endl;
+
+        delete mvrtree;
+        delete storageManager;
+    }
     
     void batch_insert_test(parlay::sequence<geobase::Point> &P, parlay::sequence<size_t> &batch_sizes, size_t d = 2){
         /* build tree */
@@ -250,6 +317,53 @@ namespace MVRTest{
             tot_t += avg_time;
             cout << "[INFO] batch_size: " << batch_size << endl;
             cout << *tree << endl;
+            cout << "[MVRTree] batch insert time = " << fixed << setprecision(6) << tot_t << endl;
+
+            l = r;
+        }
+
+        delete tree;
+        delete storageManager;
+    }
+
+    void batch_insert_test_box(parlay::sequence<geobase::Rectangle> &P, parlay::sequence<size_t> &batch_sizes, size_t d = 2){
+        /* build tree */
+        IStorageManager* storageManager = nullptr;
+        ISpatialIndex* tree = nullptr;
+
+        auto rand_p = geobase::shuffle_box(P);
+        auto max_batch_size = batch_sizes[batch_sizes.size() - 1];
+        if (max_batch_size > P.size()) max_batch_size = P.size();
+        
+        /* calculate inserted points */
+
+        auto P_insert = rand_p.substr(0, max_batch_size);
+        for (size_t i = 0; i < P_insert.size(); i++){
+            P_insert[i].id += P.size();
+        }
+
+        build_mvrtree_box(storageManager, tree, P);
+        // cout << *tree << endl;
+
+        size_t l = 0, r = 0;
+        double tot_t = 0;
+        for (auto &batch_size: batch_sizes){
+            if (batch_size > P.size()) break;
+            cout << ">---------------------------------------------<" << endl;
+            r = batch_size;
+            auto cur_insert = P_insert.substr(l, r - l);
+
+            auto avg_time = time_loop(
+                1, -1.0, 
+                [&]() {},
+                [&]() {    
+                    apply_insert_box(tree, cur_insert);
+                },
+                [&](){}
+            );
+            tot_t += avg_time;
+            cout << "[INFO] batch_size: " << batch_size << endl;
+            // cout << *tree << endl;
             cout << "[MVRTree] batch insert time = " << fixed << setprecision(6) << tot_t << endl;
 
             l = r;
@@ -304,6 +418,51 @@ namespace MVRTest{
 
     }
 
+    void batch_delete_test_box(parlay::sequence<geobase::Rectangle> &P, parlay::sequence<size_t> &batch_sizes, size_t d = 2){
+          /* build tree */
+        IStorageManager* storageManager = nullptr;
+        ISpatialIndex* tree = nullptr;
+
+        auto rand_p = geobase::shuffle_box(P);
+        auto max_batch_size = batch_sizes[batch_sizes.size() - 1];
+        if (max_batch_size > P.size()) max_batch_size = P.size();
+        
+        /* calculate inserted points */
+
+        auto P_delete = rand_p.substr(0, max_batch_size);
+
+        build_mvrtree_box(storageManager, tree, P);
+        // cout << *tree << endl;
+
+        size_t l = 0, r = 0;
+        double tot_t = 0;
+        for (auto &batch_size: batch_sizes){
+            if (batch_size > P.size()) break;
+            cout << ">---------------------------------------------<" << endl;
+            r = batch_size;
+            auto cur_insert = P_delete.substr(l, r - l);
+
+            auto avg_time = time_loop(
+                1, -1.0, 
+                [&]() {},
+                [&]() {    
+                    apply_delete_box(tree, cur_insert);
+                },
+                [&](){}
+            );
+            tot_t += avg_time;
+            cout << "[INFO] batch_size: " << batch_size << endl;
+            // cout << *tree << endl;
+            cout << "[MVRTree] batch delete time = " << fixed << setprecision(6) << tot_t << endl;
+
+            l = r;
+        }
+
+        delete tree;
+        delete storageManager;
+
+    }
+    
     template <typename Vistor>
     void range_count_test(parlay::sequence<geobase::Point> &P, parlay::sequence<geobase::Bounding_Box> &query, parlay::sequence<size_t> &cnt, size_t d = 2){
         /* build tree */
@@ -350,6 +509,65 @@ namespace MVRTest{
             else{
                 cout << fixed << setprecision(6) << cnt[i] << " " << avg_time << endl;
             }
+        }
+
+        delete tree;
+        delete storageManager;
+        
+        /*          range query example        */
+        // plow[0] = 19; plow[1] = 52;
+        // phigh[0] = 22; phigh[1] = 54;
+        // MyVisitor vis;
+        // auto r = TimeRegion(plow, phigh, 0, 1, 2);
+        // tree->intersectsWithQuery(r, vis);
+    }
+
+    template <typename Vistor>
+    void intersect_with_test(parlay::sequence<geobase::Rectangle> &P, parlay::sequence<geobase::Bounding_Box> &query, size_t d = 2){
+        /* build tree */
+        uint32_t capacity = 32;
+        id_type indexIdentifier;
+        IStorageManager* storageManager = StorageManager::createNewMemoryStorageManager();
+        ISpatialIndex* tree = MVRTree::createNewMVRTree(*storageManager, 0.7, capacity, capacity, 2, SpatialIndex::MVRTree::RV_RSTAR, indexIdentifier);
+
+        double plow[2], phigh[2];
+
+        // IStatistics* stats = nullptr;
+
+        for (auto &pt: P){
+            plow[0] = pt.x_low, plow[1] = pt.y_low;
+            phigh[0] = pt.x_high, phigh[1] = pt.y_high;
+            auto r = TimeRegion(plow, phigh, 0, 0, d);
+            tree->insertData(0, nullptr, r, pt.id);
+        } 
+        // cout << *tree << endl;
+        
+        parlay::sequence<size_t> rangeCnt(query.size());
+
+        // Vistor vis;
+        for (size_t i = 0; i < query.size(); i++){
+            auto avg_time = time_loop(
+                3, 1.0, 
+                [&]() {},
+                [&]() {    
+                        plow[0] = query[i].first.x, plow[1] = query[i].first.y;
+                        phigh[0] = query[i].second.x, phigh[1] = query[i].second.y;
+                        Vistor vis;
+                        auto r = TimeRegion(plow, phigh, 0, 1, d);
+                        // cout << r << endl;
+                        tree->intersectsWithQuery(r, vis);
+                        rangeCnt[i] = vis.range_count_res;
+                },
+                [&](){
+                    // tree->getStatistics(&stats);
+                }
+            );
+            // if (rangeCnt[i] != cnt[i]){
+            //     cout << "[ERROR] incorrect result " << rangeCnt[i] << "-" << cnt[i] << endl;
+            // }
+            // else{
+                cout << fixed << setprecision(6) << rangeCnt[i] << " " << avg_time << endl;
+            // }
         }
 
         delete tree;

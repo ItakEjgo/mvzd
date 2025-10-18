@@ -1,7 +1,7 @@
 all: main
 
 main:		main.cpp mvrtree_test.hpp mv3rtree_test.hpp
-	g++ -O3 -DNDEBUG -std=c++17 -Wall -I./include -o main main.cpp -L/data/bhuan102/libspatialindex/lib64 -lspatialindex -pthread
+	g++ -O3 -DNDEBUG -std=c++17 -Wall -I./include -I./include/parlaylib/include/ -o main main.cpp -L/data/bhuan102/libspatialindex/lib64 -lspatialindex -pthread
 
 clean:
 	rm -f test main

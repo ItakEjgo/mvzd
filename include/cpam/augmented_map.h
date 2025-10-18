@@ -66,6 +66,12 @@ public:
     return;
   }
 
+  template<typename F, typename Out>
+  static void intersects_filter(M m, const F& f, int64_t &cnt, Out &out) {
+    Tree::intersects_filter(m.get_root(), f, cnt, out); 
+    return;
+  }
+
   template<typename F, typename F2, typename Out>
   static void knn_filter(M m, const F &f, const F2 &f2, size_t &k, Out &out) {
     Tree::knn_filter(m.get_root(), f, f2, k, out);

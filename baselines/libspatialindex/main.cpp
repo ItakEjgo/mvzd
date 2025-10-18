@@ -403,6 +403,19 @@ void MV3Rtree_build(char** argv){
     delete Rtree_storageManager;
 }
 
+void read_boxes(ifstream &fin, parlay::sequence<geobase::Rectangle> &ret, bool is_real = false){
+    size_t n, d;
+    fin >> n >> d;
+    ret.resize(n);
+    size_t id;
+    double x_low, y_low, x_high, y_high;
+    for (size_t i = 0; i < n; i++){
+        fin >> id >> x_low >> y_low >> x_high >> y_high;
+        ret[i] = geobase::Rectangle(id, x_low, y_low, x_high, y_high);
+        // ret.emplace_back(Value_Box(Point(x_low, y_low), Point(x_high, y_high), id));
+    }
+}
+
 void run(int argc, char** argv){
 	cpam::commandLine cmd(argc, argv, "[-i <Path-to-Input>] [-t <Task-Name>] [-b <Path-to-Batch-File>] [-bf <batch-fraction>] "
                                       "[-r <Path-to-Range-Query>] [-real <Is-Real-Dataset?>] [-a <Algorithm-Name>]"
@@ -422,6 +435,69 @@ void run(int argc, char** argv){
     int is_real = cmd.getOptionIntValue("-real", 0);
 
     ifstream fin(input_file);
+
+    bool deal_box = true;
+    if (deal_box){
+        parlay::sequence<geobase::Rectangle> R;
+        read_boxes(fin, R);
+        if (task == "build"){
+            if (algo == "mvrtree"){
+                MVRTest::build_test_box(R);
+            }
+            if (algo == "mv3rtree"){
+                MV3RTest::build_test_box(R);
+            }
+        }
+
+        parlay::sequence<size_t> batch_sizes = {
+			10000,
+			20000,
+			50000,
+			100000,
+			200000,
+			500000,
+			1000000,
+			2000000,
+			5000000,
+			10000000,
+			20000000,
+			50000000,
+			100000000
+		};
+        
+        if (task == "batch-insert"){
+            if (algo == "mvrtree"){
+                MVRTest::batch_insert_test_box(R, batch_sizes);
+            }
+            if (algo == "mv3rtree"){
+                MV3RTest::batch_insert_test_box(R, batch_sizes);
+            }
+        }
+
+        if (task == "batch-delete"){
+            if (algo == "mvrtree"){
+                MVRTest::batch_delete_test_box(R, batch_sizes);
+            }
+            if (algo == "mv3rtree"){
+                MV3RTest::batch_delete_test_box(R, batch_sizes);
+            }
+        }
+
+        if (task == "intersect-with"){
+            string query_file = cmd.getOptionValue("-r");
+            auto [cnt, query] = geobase::read_range_query(query_file, 8, maxSize);
+            query = query.substr(0, 100);
+            if (algo == "mvrtree"){
+                MVRTest::intersect_with_test<MyVisitor>(R, query);
+            }
+            if (algo == "mv3rtree"){ 
+                MV3RTest::intersect_with_test<MyVisitor>(R, query);
+            }
+        }        
+    
+        return;
+    }
+
     parlay::sequence<geobase::Point> P;
     // auto largest_mbr = geobase::read_pts(P, fin, is_real);
     geobase::read_pts(P, fin, is_real);
