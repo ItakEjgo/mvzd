@@ -23,4 +23,5 @@ output/
 log/
 test_code/
 build/
+src/*.sh
 
