@@ -1,10 +1,14 @@
 # SILVA: Spatial Index Library with Version Access
 
 ## Overview
-**SILVA** is a high-performance library for managing multi-version spatial data (points). It enables storing multiple versions of spatial indexes and supports real-time spatial queries on any stored version, including range counting/reporting and k-nearest neighbors (KNN). 
+**SILVA** is a high-performance main-memory spatial index library for managing multi-version spatial data (points and polygons). It enables storing multiple versions of spatial indexes and supports real-time spatial queries on any stored version, including range counting/reporting and k-nearest neighbors (KNN). 
 In addition to *standard spatial queries*, it also supports
 *version control* operations (commit, merge, spatial diff, purge) are optimized for parallel execution. 
 Our experimental results show that SILVA can achieve  **100x faster operations** and **70% lower memory usage** than state-of-the-art multi-version spatial index MV(3)R-tree from *libspatialindex* library.
+
+**Ploygon Support** SILVA also supports processing polygons like traditional *R-trees*. We also integrate rectangle intersects queries, which is widely used in real-world applications.
+
+**Disk Interaction** This capability is particularly helpful when certain versions need to be archived for long-term importance, or when accumulated versions cause significant high memory pressure. In such scenarios, specific versions can be stored from memory to disk while keeping the calculated information. This ensures when the versions are later retrieved from disk, no extra computation overhead is required to reconstruct the index.
 
 ## Key Features
 - **Multi-Version Control**  
@@ -17,6 +21,10 @@ Our experimental results show that SILVA can achieve  **100x faster operations**
   Execute on any historical version:
   - `range_count` / `range_report`
   - `knn_search`
+- **Polygon Support**
+  - Build, update, and intersect query for rectangles.
+- **Disk Interactions**
+  - Store/Load an entire version to/from disk.
 - **Parallel Updates**
   - Update to the multi-version index can be highly in parallel.  
 - **High Efficiency**  
@@ -36,7 +44,7 @@ Our experimental results show that SILVA can achieve  **100x faster operations**
 ---
 
 ## Performance Comparison
-- Please refer to Experiment section in our paper.
+- Please refer to Experiment section in our paper and supplementary material.
 ---
 
 ## Code Structure
@@ -72,7 +80,7 @@ make # Generates binaries
 |------------------------|--------------------------------------|---------------------------|
 | `-i <Path-to-Input>`   | Input data file path                 | `-i data/points.in`      |
 | `-o <Path-to-Output>`  | Output results path                  | `-o results.log`      |
-| `-t <Task-Name>`       | Operation type (`build`, `insert`,`range-count` etc.)| `-t build`          |
+| `-t <Task-Name>`       | Operation type (`build`, `insert`,`range-count`, `box-intersect` etc.)| `-t build`          |
 | `-a <Algorithm-Name>` | Index type (`mvzd`, `paczz`, `paczbb`, etc.) | `-a MVZD`                |
 | `-b <Batch-file>`      | Batch operations file                | `-b batch/ops.in`        |
 | `-bf <batch-fraction>` | Percent of batch to process | `-bf 10`               |
