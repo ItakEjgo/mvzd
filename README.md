@@ -50,8 +50,6 @@ Our experimental results show that SILVA can achieve  **100x faster operations**
 ## Code Structure
 ./
 
-|── SILVA-technical-report.pdf #full version paper
-
 ├── baselines/ # Comparison implementations
 
 |   ├── libspatialindex/ # MVRtree & MV3Rtree
