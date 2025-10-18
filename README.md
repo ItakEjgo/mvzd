@@ -65,6 +65,7 @@ Our experimental results show that SILVA can achieve  **100x faster operations**
 ├── parlaylib/ # parallel primitives
 
 Other files.
+The implementation of polygon support and disk interaction can be found in branch *silva-box*.
 
 ## Compilation
 bash
