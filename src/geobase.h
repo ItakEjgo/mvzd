@@ -172,13 +172,16 @@ namespace geobase
     };
 
     struct diff_type{
+        size_t same_cnt;
         size_t add_cnt, remove_cnt;
         parlay::sequence<Point> add, remove;
         diff_type(){
+            same_cnt = 0;
             add_cnt = 0;
             remove_cnt = 0;
         }
         diff_type(size_t add_sz, size_t remove_sz){
+            same_cnt = 0;
             add_cnt = 0;
             remove_cnt = 0;
             add = parlay::sequence<Point>::uninitialized(add_sz);
@@ -205,10 +208,12 @@ namespace geobase
             remove.resize(remove_cnt);
         }
         void reset(){
+            same_cnt = 0;
             add_cnt = 0;
             remove_cnt = 0;
         }
         void reset(size_t add_sz, size_t remove_sz){
+            same_cnt = 0;
             add_cnt = 0;
             remove_cnt = 0;
             add = parlay::sequence<Point>::uninitialized(add_sz);
@@ -1159,4 +1164,60 @@ namespace geobase
             ret_noconflict.emplace_back(sorted_b[j++]);
         return make_tuple(ret_noconflict, ret_conflict);
     }
+
+    template<typename PT>
+    void generate_versions(PT& P, const PT& update_pool, int version_num, 
+                           std::vector<PT>& P_insert, std::vector<PT>& P_delete) {
+        
+        P_insert.resize(version_num);
+        P_delete.resize(version_num);
+
+        uint64_t current_id = P.size() + 1;
+        
+        std::vector<geobase::Point> active_points;
+        active_points.reserve(P.size() + version_num * (size_t)(P.size() * 0.05)); 
+
+        for (size_t i = 0; i < P.size(); ++i) {
+            P[i].id = current_id++; 
+            active_points.push_back(P[i]);
+        }
+
+        std::mt19937_64 rng(233666); 
+        size_t base_size = P.size();
+        size_t min_change = std::max<size_t>(1, base_size * 0.005); 
+        size_t max_change = std::max<size_t>(2, base_size * 0.05);  
+
+        cout << "[INFO]: Synthetic generator constraints: Min Change=" << min_change << ", Max Change=" << max_change << endl;
+
+        for (int v = 0; v < version_num; ++v) {
+            std::uniform_int_distribution<size_t> dist_del(min_change, max_change - 1);
+            size_t num_delete = dist_del(rng);
+            
+            std::uniform_int_distribution<size_t> dist_ins(num_delete + 1, max_change);
+            size_t num_insert = dist_ins(rng);
+
+            for (size_t i = 0; i < num_delete; ++i) {
+                std::uniform_int_distribution<size_t> dist_idx(0, active_points.size() - 1);
+                size_t del_idx = dist_idx(rng);
+                
+                P_delete[v].push_back(active_points[del_idx]);
+                
+                active_points[del_idx] = active_points.back();
+                active_points.pop_back();
+            }
+
+            std::uniform_int_distribution<size_t> dist_upd(0, update_pool.size() - 1);
+            for (size_t i = 0; i < num_insert; ++i) {
+                size_t upd_idx = dist_upd(rng);
+                auto new_pt = update_pool[upd_idx];
+                new_pt.id = current_id++; 
+                
+                P_insert[v].push_back(new_pt);
+                active_points.push_back(new_pt); 
+            }
+            
+            cout << "[INFO]: Version " << v + 1 << " generated. Inserts: " << num_insert << ", Deletes: " << num_delete << endl;
+        }
+    }
+
 }

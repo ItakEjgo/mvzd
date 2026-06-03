@@ -163,6 +163,74 @@ namespace CPAMBB_BOX{
 }
 
 namespace CPAMBB{
+
+	template<typename PT>
+	void synthetic_multi_version_test(PT P, std::vector<PT> P_insert, std::vector<PT> P_delete, int version_num){
+		vector<CPAMBB::zmap> all_versions;
+		CPAMBB::zmap tree;
+
+		/* Build initial version */
+		auto build_avg = time_loop(
+			3, 1.0, [&]() {
+				tree.clear();
+			},
+			[&]() {
+				tree = CPAMBB::map_init(P);	// init
+			},
+			[&](){
+			});
+
+		all_versions.emplace_back(tree);
+
+		auto f_noop = [&](const auto &et){ return 0; };
+		std::unordered_map<size_t, bool> mmp = {}, num_mmp = {};
+		
+		double cur_mem = 1.0 * tree.size_in_bytes(f_noop, mmp);
+		auto [cur_inte_num, cur_leaf_num, cur_leaf_sz] = tree.node_stats(num_mmp);
+
+		cout << "------------------------------------------------" << endl;
+		cout << "[Base Version 0]" << endl;
+		cout << "  Build Time   : " << fixed << setprecision(6) << build_avg << " Sec" << endl;
+		cout << "  Total Memory : " << cur_mem / 1024.0 / 1024.0 << " MB" << endl;
+		cout << "  Total Nodes  : " << cur_inte_num << " interior, " << cur_leaf_num << " leaf" << endl;
+		cout << "------------------------------------------------" << endl;
+		
+		vector<zmap> new_ver(version_num);
+
+		for (auto i = 0; i < version_num; i++){
+			auto commit_avg = time_loop(
+				3, 1.0, 
+				[&]() {
+					new_ver[i].clear();
+				},
+				[&]() {
+					new_ver[i] = CPAMBB::map_commit(all_versions[i], P_insert[i], P_delete[i]);
+				},
+				[&](){});
+
+			all_versions.emplace_back(new_ver[i]);
+			
+			cur_mem = 0;
+			mmp.clear();
+			num_mmp.clear();
+			cur_inte_num = 0;
+			cur_leaf_num = 0;
+
+			for (size_t j = 0; j < all_versions.size(); j++){
+				cur_mem += 1.0 * all_versions[j].size_in_bytes(f_noop, mmp);
+				auto [tmp_inte_num, tmp_leaf_num, tmp_leaf_sz] = all_versions[j].node_stats(num_mmp);
+				cur_inte_num += tmp_inte_num;
+				cur_leaf_num += tmp_leaf_num;
+			}
+			
+			cout << "[Version " << i + 1 << "]" << endl;
+			cout << "  Commit Time  : " << fixed << setprecision(6) << commit_avg << " Sec" << endl;
+			cout << "  Total Memory : " << cur_mem / 1024.0 / 1024.0  << " MB" << endl;
+			cout << "  Total Nodes  : " << cur_inte_num << " interior, " << cur_leaf_num << " leaf" << endl;
+			cout << "------------------------------------------------" << endl;
+		}
+	}
+
 	template<typename PT>
 	void multi_version_test(PT P, string dir, int start_year = 14, int version_num = 5){
 		auto cur_year = start_year;
@@ -292,19 +360,22 @@ namespace CPAMBB{
 			auto r_pts = parlay::sequence<Point>::uninitialized(2 * maxSize);
 
 			for (size_t i = 0; i < range_queries.size(); i++){
+				size_t prune_cnt = 0;
 				auto avg_time = time_loop(
 					3, 1.0,
 					[&](){},
 					[&](){
 						diff_type ret_diff(maxSize, maxSize);
 						CPAMBB::plain_map_spatial_diff(cpambb0, cpambb1, range_queries[i], ret_diff, l_pts, r_pts);
+						// CPAMBB::map_spatial_diff2(cpambb0, cpambb1, range_queries[i], ret_diff);
 						ret_diff.compact();
 						addCnt[i] = ret_diff.add.size();
 						removeCnt[i] = ret_diff.remove.size();
+						prune_cnt = ret_diff.same_cnt;
 					},
 					[&]{}
 				);
-				cout << fixed << setprecision(6) << i << " " << avg_time << endl;
+				cout << fixed << setprecision(6) << i << " " << avg_time << ", prune: " << prune_cnt << endl;
 			}
 
 			// auto avg_time = time_loop(
@@ -361,21 +432,24 @@ namespace CPAMBB{
 			auto l_pts = parlay::sequence<Point>::uninitialized(2 * maxSize);
 			auto r_pts = parlay::sequence<Point>::uninitialized(2 * maxSize);
 			for (size_t i = 0; i < range_queries.size(); i++){
+				size_t prune_cnt = 0;
 				auto avg_time = time_loop(
 					3, 1.0,
 					[&](){},
 					[&](){
 						// for (size_t i = 0; i < range_queries.size(); i++){
 							diff_type ret_diff(maxSize, maxSize);
-							CPAMBB::plain_map_spatial_diff(cpambb0, cpambb2, range_queries[i], ret_diff, l_pts, r_pts);
+							// CPAMBB::plain_map_spatial_diff(cpambb0, cpambb2, range_queries[i], ret_diff, l_pts, r_pts);
+							CPAMBB::map_spatial_diff2(cpambb0, cpambb2, range_queries[i], ret_diff);
 							ret_diff.compact();
 							addCnt[i] = ret_diff.add.size();
 							removeCnt[i] = ret_diff.remove.size();
+							prune_cnt = ret_diff.same_cnt;
 						// }
 					},
 					[&]{}
 				);
-				cout << fixed << setprecision(6) << i << " " << avg_time << endl;
+				cout << fixed << setprecision(6) << i << " " << avg_time << ", prune: " << prune_cnt << endl;
 			}
         	// auto avg_time = time_loop(
             // 	3, 1.0,
@@ -1889,6 +1963,7 @@ namespace ZDTest{
 			diff_type ret_diff(maxSize, maxSize);
 
 			for (size_t i = 0; i < range_queries.size(); i++){
+				size_t prune_cnt = 0;
 				auto avg_time = time_loop(
 					3, 1.0,
 					[&](){},
@@ -1899,10 +1974,11 @@ namespace ZDTest{
 						ret_diff.remove.resize(ret_diff.remove_cnt);
 						addCnt[i] = ret_diff.add.size();
 						removeCnt[i] = ret_diff.remove.size();
+						prune_cnt = ret_diff.same_cnt;
 					},
 					[&]{}
 				);
-				cout << fixed << setprecision(6) << i << " " << avg_time << endl;
+				cout << fixed << setprecision(6) << i << " " << avg_time << ", prune: " << prune_cnt << endl;
 			}
 
 			// auto avg_time = time_loop(
@@ -2398,6 +2474,56 @@ namespace ZDTest{
 
 			// cout << "[memory usage for inte nodes]: " << 1.0 * stat.mem_inte_nodes / 1024.0 / 1024.0 << " MB" << endl 
 			//  	<< "[memory usage for leaf nodes]: " << 1.0 * stat.mem_leaf_nodes / 1024.0 / 1024.0 << " MB"  << endl;	
+		}
+	}
+
+	template<typename PT>
+	void synthetic_multi_version_test(PT P, std::vector<PT> P_insert, std::vector<PT> P_delete, int version_num){
+		ZDTree::Tree zdtree(leaf_size);
+
+		/* Build initial version */
+		auto build_avg = time_loop(
+			3, 1.0, [&]() {
+				zdtree.clear();
+			},
+			[&]() {
+				auto P_set = get_sorted_points(P);
+				zdtree.build(P_set);
+			},
+			[&](){
+			});
+
+		zdtree.multi_version_roots.emplace_back(zdtree.root);	// store the initial version 0
+		auto stat = zdtree.get_tree_statistics();
+
+		cout << "------------------------------------------------" << endl;
+		cout << "[Base Version 0]" << endl;
+		cout << "  Build Time   : " << fixed << setprecision(6) << build_avg << " Sec" << endl;
+		cout << "  Total Memory : " << stat.get_total() << " MB" << endl;
+		cout << "  Total Nodes  : " << stat.num_inte_nodes << " interior, " << stat.num_leaf_nodes << " leaf" << endl;
+		cout << "------------------------------------------------" << endl;
+
+		shared_ptr<ZDTree::BaseNode> new_ver = zdtree.root;
+
+		for (auto i = 0; i < version_num; i++){
+			auto commit_avg = time_loop(
+				3, 1.0, 
+				[&]() {
+					new_ver.reset();
+				},
+				[&]() {
+					new_ver = zdtree.commit(zdtree.multi_version_roots[i], P_insert[i], P_delete[i]);
+				},
+				[&](){});
+
+			zdtree.multi_version_roots.emplace_back(new_ver);
+			auto cur_stat = zdtree.get_tree_statistics();
+
+			cout << "[Version " << i + 1 << "]" << endl;
+			cout << "  Commit Time  : " << fixed << setprecision(6) << commit_avg << " Sec" << endl;
+			cout << "  Total Memory : " << cur_stat.get_total() << " MB" << endl;
+			cout << "  Total Nodes  : " << cur_stat.num_inte_nodes << " interior, " << cur_stat.num_leaf_nodes << " leaf" << endl;
+			cout << "------------------------------------------------" << endl;
 		}
 	}
 

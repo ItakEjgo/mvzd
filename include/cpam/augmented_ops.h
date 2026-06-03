@@ -374,6 +374,141 @@ struct augmented_ops : Map {
     range_report_filter2(rb->rc, f, cnt, out, granularity); 
   }
 
+  // store range report results in ret_diff, is_add indicates whether we are reporting for the add set or the remove set
+  template<typename F, typename DIFF>
+  static void report_to_diff(node* b, const F& f, DIFF& ret_diff, bool is_add) {
+      if (!b) return;
+
+      auto cur_aug = Map::aug_val(b);
+      auto flag = f(cur_aug.first);
+      if (flag < 0) return;
+
+      if (Map::is_compressed(b)) {
+          auto f_iter = [&](const auto& et) {
+              auto p = std::get<1>(et);
+              auto box_p = std::make_pair(p, p);
+              if (flag == 1 || f(box_p) == 1) {
+                  if (is_add) ret_diff.add_point(p);
+                  else ret_diff.remove_point(p);
+              }
+          };
+          Map::iterate_seq(b, f_iter);
+          return;
+      }
+
+      auto rb = Map::cast_to_regular(b);
+      auto p = Map::get_val(rb);
+      auto box_p = std::make_pair(p, p);
+      
+      report_to_diff(rb->lc, f, ret_diff, is_add);
+      if (f(box_p) == 1) {
+          if (is_add) ret_diff.add_point(p);
+          else ret_diff.remove_point(p);
+      }
+      report_to_diff(rb->rc, f, ret_diff, is_add);
+  }
+
+
+// spatial diff operation based on key split
+  template<typename F, typename DIFF>
+  static void spatial_diff_filter(node* a, node* b, const F& f, DIFF& ret_diff) {
+    /* Test the effect of pointer equal prune */
+      // if (a == b) {
+      //   if (a != nullptr){
+      //     ret_diff.same_cnt++;
+      //   }
+      //   return;
+      // }
+
+      bool a_hit = false, b_hit = false;
+      if (a) {
+          auto a_aug = Map::aug_val(a);
+          if (f(a_aug.first) >= 0) a_hit = true;
+      }
+      if (b) {
+          auto b_aug = Map::aug_val(b);
+          if (f(b_aug.first) >= 0) b_hit = true;
+      }
+
+      if (!a_hit && !b_hit) return; 
+
+      if (a_hit && !b_hit) {
+          report_to_diff(a, f, ret_diff, false); 
+          return;
+      }
+
+      if (!a_hit && b_hit) {
+          report_to_diff(b, f, ret_diff, true);
+          return;
+      }
+
+      if (Map::is_compressed(a)) {
+          if (Map::is_compressed(b)) {
+              Map::iterate_seq(a, [&](const auto& et) {
+                  auto key_a = std::get<0>(et);
+                  auto val_a = std::get<1>(et);
+                  if (f(std::make_pair(val_a, val_a)) == 1 && !Map::find(b, key_a).has_value()) {
+                      ret_diff.remove_point(val_a);
+                  }
+              });
+              Map::iterate_seq(b, [&](const auto& et) {
+                  auto key_b = std::get<0>(et);
+                  auto val_b = std::get<1>(et);
+                  if (f(std::make_pair(val_b, val_b)) == 1 && !Map::find(a, key_b).has_value()) {
+                      ret_diff.add_point(val_b);
+                  }
+              });
+              return; 
+          } 
+          else {
+              auto rb_b = Map::cast_to_regular(b);
+              auto key_b = Map::get_key(rb_b);
+              auto val_b = Map::get_val(rb_b);
+              auto box_b = std::make_pair(val_b, val_b);
+
+              auto [l_a, mid_a, r_a] = Map::split(a, key_b); 
+
+              spatial_diff_filter(l_a, rb_b->lc, f, ret_diff);
+
+              bool b_in_reg = (f(box_b) == 1);
+              if (b_in_reg && !mid_a.has_value()) {
+                  ret_diff.add_point(val_b);
+              } else if (!b_in_reg && mid_a.has_value()) {
+                  auto val_a = std::get<1>(mid_a.value());
+                  if (f(std::make_pair(val_a, val_a)) == 1) {
+                      ret_diff.remove_point(val_a);
+                  }
+              }
+
+              spatial_diff_filter(r_a, rb_b->rc, f, ret_diff);
+              return;
+          }
+      }
+
+      auto rb_a = Map::cast_to_regular(a);
+      auto key_a = Map::get_key(rb_a);
+      auto val_a = Map::get_val(rb_a);
+      auto box_a = std::make_pair(val_a, val_a);
+
+      auto [l_b, mid_b, r_b] = Map::split(b, key_a);
+
+      spatial_diff_filter(rb_a->lc, l_b, f, ret_diff);
+
+      bool a_in_reg = (f(box_a) == 1);
+      if (a_in_reg && !mid_b.has_value()) {
+          ret_diff.remove_point(val_a);
+      } else if (!a_in_reg && mid_b.has_value()) {
+          auto val_b = std::get<1>(mid_b.value());
+          auto box_b = std::make_pair(val_b, val_b);
+          if (f(box_b) == 1) {
+              ret_diff.add_point(val_b);
+          }
+      }
+
+      spatial_diff_filter(rb_a->rc, r_b, f, ret_diff);
+  }
+
+
   template<class F, typename Out>
   static void intersects_filter(node* b, const F &f, int64_t &cnt, Out &out, size_t granularity=kNodeLimit) {
     if (!b) return;

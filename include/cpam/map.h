@@ -713,8 +713,8 @@ public:
     // return Tree::size_in_bytes(root, f);
     // cout << "called here" << endl;
     auto [inte, leaf] = Tree::size_in_bytes_all(root, f, mmp);
-    cout << "total inte size: " << 1.0 * inte / 1024.0 / 1024.0 << " MB" << endl;
-    cout << "total leaf size: " << 1.0 * leaf / 1024.0 / 1024.0 << " MB" << endl;
+    // cout << "total inte size: " << 1.0 * inte / 1024.0 / 1024.0 << " MB" << endl;
+    // cout << "total leaf size: " << 1.0 * leaf / 1024.0 / 1024.0 << " MB" << endl;
     return inte + leaf; 
   }
 

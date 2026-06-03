@@ -73,6 +73,15 @@ namespace CPAMBB{
 		return;
 	}
 
+	template<typename M, typename DIFF>
+	auto map_spatial_diff2(M &lhs, M &rhs, Bounding_Box &query_mbr, DIFF &ret_diff){
+		auto f = [&](auto cur){ 
+			return mbr_mbr_relation(cur, query_mbr);
+		};
+		zmap::spatial_diff(lhs, rhs, f, ret_diff);
+		return;
+	}
+
 	template<typename M>
 	auto map_diff(M &lhs, M &rhs){
 		auto add = zmap::values(zmap::map_difference(rhs, lhs));

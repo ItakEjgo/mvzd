@@ -162,7 +162,7 @@ void run(int argc, char** argv){
 	/* read input file */
 	ifstream fin(input_file);
 
-	bool deal_box = true;
+	bool deal_box = false;
 
 	if (deal_box){
 		parlay::sequence<geobase::Rectangle> R;
@@ -228,6 +228,7 @@ void run(int argc, char** argv){
 
 	parlay::sequence<geobase::Point> P;
 	largest_mbr = geobase::read_pts(P, fin, is_real);	//	change to true if id is contained.
+
 	/* build test */
 	if (task == "build"){
 		if (algo == "mvzd"){
@@ -447,6 +448,53 @@ void run(int argc, char** argv){
 		return;
 	}
 
+	/* synthetic multi-version test */
+	if (task == "synthetic-multi-version-test") {
+		if (!cmd.getOption("-mv")) {
+			cout << "[ERROR]: <File-to-Update-Pool> is not specified (-mv)." << endl;
+			return;
+		}
+		
+		// number of versions to generate, default to 5 if not specified
+		int version_num = 5; 
+		if (cmd.getOption("-vnum")) {
+			version_num = stoi(cmd.getOptionValue("-vnum"));
+		}
+
+		string update_file = cmd.getOptionValue("-mv");
+		ifstream fin_update(update_file);
+		if (!fin_update.is_open()) {
+			cout << "[ERROR]: Failed to open update pool file!" << endl;
+			return;
+		}
+
+		parlay::sequence<geobase::Point> update_pool;
+		read_pts(update_pool, fin_update, 0); 
+		cout << "[INFO]: Successfully loaded update pool data. Size: " << update_pool.size() << endl;
+
+		cout << "[INFO]: Start generating synthetic multi-version data..." << endl;
+		std::vector<parlay::sequence<geobase::Point>> P_insert, P_delete;
+		
+		geobase::generate_versions(P, update_pool, version_num, P_insert, P_delete);
+		cout << "[INFO]: Synthetic data generation complete." << endl;
+
+		{
+			cout << "\n=====================================" << endl;
+			cout << "  Starting ZDTest Synthetic Test" << endl;
+			cout << "=====================================" << endl;
+			ZDTest::synthetic_multi_version_test(P, P_insert, P_delete, version_num);
+		}
+		
+		{
+			cout << "\n=====================================" << endl;
+			cout << "  Starting CPAMBB Synthetic Test" << endl;
+			cout << "=====================================" << endl;
+			CPAMBB::synthetic_multi_version_test(P, P_insert, P_delete, version_num);	
+		}
+		
+		return;
+	}
+
 	/* multi-version with mixed query */
 	if (task == "multi-version-query-test"){
 		if (!cmd.getOption("-mv")){
@@ -488,7 +536,7 @@ void run(int argc, char** argv){
 		// size_t batch_size = 10000;
         size_t ratio = 5;
 		// queries = queries.substr(0, 50000);
-		// queries = queries.substr(15, 1);
+		// queries = queries.substr(0, 20);
 		// queries = queries.substr(109, 1);
 		// queries = queries.substr(49999, 1);
 
@@ -502,7 +550,7 @@ void run(int argc, char** argv){
             // 1000000,
             // 2000000,
             // 5000000,
-            10000000,
+            1000000,
             // 20000000, 
             // 50000000,
             // 100000000
@@ -526,6 +574,9 @@ void run(int argc, char** argv){
 		// // CPAMZ::plain_spatial_diff_test_latency(P, queries, batch_sizes, ratio);
 		cout << "[CPAM-BB-Plain]" << endl;
 		CPAMBB::plain_spatial_diff_test_latency(P, queries, batch_sizes, ratio);
+
+		cout << "[CPAM-BB]" << endl;
+		CPAMBB::spatial_diff_test_latency(P, queries, batch_sizes, ratio);
 
         // for (auto &batch_size: batch_sizes){
         //     if (batch_size > P.size()) break;

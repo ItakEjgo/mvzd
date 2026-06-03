@@ -710,7 +710,12 @@ namespace ZDTree{
 
 		//	case overlapped, need to handle multiple cases
 		/* Case 0: no difference */
-		if (node1 == node2) return;
+		if (node1 == node2) {
+			if (node1 != nullptr){
+				ret_diff.same_cnt++;
+			}
+			return;
+		}
 		/* Case 1: node1 is empty, add all points from node2 */
 		if (!node1){
 			range_report_node(node2, query_mbr, cur_mbr, x_prefix, y_prefix, b, x_splitter, ret_diff.add_cnt, ret_diff.add);
@@ -1380,36 +1385,39 @@ namespace ZDTree{
 	}
 
 	//	traverse sequentially
-	template<typename NodeMap>
-	void Tree::get_tree_statistics(shared_ptr<BaseNode> &x, tree_stat &stat, NodeMap &mmp){
+	template<typename NodeSet>
+	void Tree::get_tree_statistics(shared_ptr<BaseNode> &x, tree_stat &stat, NodeSet &visited){
+		if (!x || visited.count(x.get())) {
+			return; 
+		}
+
+		visited.insert(x.get());
+
 		if (x->is_leaf()){
 			auto cur_leaf = static_cast<LeafNode*>(x.get());
-			if (!mmp[x]) {
-				stat.num_leaf_nodes++;
-				stat.mem_leaf_nodes += sizeof(LeafNode) + cur_leaf->records.capacity() * sizeof(Point);
-				mmp[x] = 1;
-			}
-			return;
+			stat.num_leaf_nodes++;
+			stat.mem_leaf_nodes += sizeof(LeafNode) + cur_leaf->records.capacity() * sizeof(Point);
+			return; 
 		}
-		if (!mmp[x]){
-			stat.num_inte_nodes++;
-			stat.mem_inte_nodes += sizeof(InteNode);
-			mmp[x] = 1;
-		}
+
+		stat.num_inte_nodes++;
+		stat.mem_inte_nodes += sizeof(InteNode);
 		auto cur_inte = static_cast<InteNode*>(x.get());
-		if (cur_inte->l_son) get_tree_statistics(cur_inte->l_son, stat, mmp);
-		if (cur_inte->r_son) get_tree_statistics(cur_inte->r_son, stat, mmp);
+		
+		if (cur_inte->l_son) get_tree_statistics(cur_inte->l_son, stat, visited);
+		if (cur_inte->r_son) get_tree_statistics(cur_inte->r_son, stat, visited);
 	}
 
 	auto Tree::get_tree_statistics(){
 		tree_stat stat;
-		unordered_map<shared_ptr<BaseNode>, bool> node_map;
+		std::unordered_set<BaseNode*> visited_nodes; 
+		
 		for (auto &rt: multi_version_roots){
 			if (!rt){
 				cout << "Released version" << endl;
 				continue;
 			}
-			get_tree_statistics(rt, stat, node_map);
+			get_tree_statistics(rt, stat, visited_nodes);
 		}
 		return stat;
 	}

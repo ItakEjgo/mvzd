@@ -29,8 +29,8 @@ PHYSICAL_CORES=$(seq -s, 0 95)
 i=96
 export PARLAY_NUM_THREADS=$i
 echo "[INFO] Running with Threads: $i"
-numactl --physcpubind=$PHYSICAL_CORES -i all ./main -i $Unifile -a combined -t spatial-commit-merge -r $Uniqry2 > output/100M-U-Commit-Merge.log
-numactl --physcpubind=$PHYSICAL_CORES -i all ./main -i $Varfile -a combined -t spatial-commit-merge -r $Varqry2 > output/100M-V-Commit-Merge.log
+numactl --physcpubind=$PHYSICAL_CORES -i all ./main -i $Unifile -a combined -t spatial-diff -r $Uniqry2 > output/100M-U-Spatial-Diff.log
+numactl --physcpubind=$PHYSICAL_CORES -i all ./main -i $Varfile -a combined -t spatial-diff -r $Varqry2 > output/100M-V-Spatial-Diff.log
 
 
 

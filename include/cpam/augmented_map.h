@@ -66,6 +66,12 @@ public:
     return;
   }
 
+  template<typename F, typename DIFF>
+  static void spatial_diff(M a, M b, const F& f, DIFF &ret_diff) {
+      Tree::spatial_diff_filter(a.get_root(), b.get_root(), f, ret_diff); 
+      return;
+  }
+
   template<typename F, typename Out>
   static void intersects_filter(M m, const F& f, int64_t &cnt, Out &out) {
     Tree::intersects_filter(m.get_root(), f, cnt, out); 
