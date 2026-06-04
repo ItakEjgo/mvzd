@@ -598,11 +598,5 @@ void run(int argc, char** argv){
 int main(int argc, char **argv) {
 	ios::sync_with_stdio(0); cin.tie(0);
 	run(argc, argv);
-	// geobase::kBoundedQueue<geobase::Point, geobase::nn_pair> kbq;
-	// auto test_p = geobase::Point(0, 2032, 66199);
-	// cout << bitset<64>(test_p.morton_id) << endl;
-	// gc_test();
-	// BRTest::hilbert_test();
-	// test(argv[1], atoi(argv[2]), atoi(argv[3]), atoi(argv[4]));
 	return 0;
 }

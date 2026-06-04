@@ -33,11 +33,11 @@ Our experimental results show that SILVA can achieve  **100x faster operations**
 ---
 
 ## Implemented Indexes
-### 1. PaC-Z-Code & PaC-Z-BB
+### 1. PaC-Z tree
 - **High-level Idea**  
   Maps spatial points to 1D via Z-curve, then extends the **PaC Tree** (1D functional binary search tree) for versioned operations and spatial queries.
 
-### 2. MVZD Tree
+### 2. MVQ Tree (Multi-version Quadtree)
 - **High-level Idea**  
   Leverages **spatial invariance** to maximize sharing of unchanged regions across versions.
   Achieves minimal memory footprint as well as fast versioned operations.
@@ -80,7 +80,7 @@ make # Generates binaries
 | `-i <Path-to-Input>`   | Input data file path                 | `-i data/points.in`      |
 | `-o <Path-to-Output>`  | Output results path                  | `-o results.log`      |
 | `-t <Task-Name>`       | Operation type (`build`, `insert`,`range-count`, `box-intersect` etc.)| `-t build`          |
-| `-a <Algorithm-Name>` | Index type (`mvzd`, `paczz`, `paczbb`, etc.) | `-a MVZD`                |
+| `-a <Algorithm-Name>` | Index type (`MVQ`, `paczz`, `paczbb`, etc.) | `-a MVQ`                |
 | `-b <Batch-file>`      | Batch operations file                | `-b batch/ops.in`        |
 | `-bf <batch-fraction>` | Percent of batch to process | `-bf 10`               |
 | `-real <0/1>`   | Real-world dataset flag              | `-real 1`              |
@@ -88,4 +88,4 @@ make # Generates binaries
 ### Example Command
 bash
 
-./main -i data/uniform_100M.in -o build.log -t build -a mvzd -real 0
+./main -i data/uniform_100M.in -o build.log -t build -a MVQ -real 0
