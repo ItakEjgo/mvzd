@@ -50,17 +50,9 @@ Our experimental results show that SILVA can achieve  **100x faster operations**
 ## Code Structure
 ./
 
-├── baselines/ # Comparison implementations
-
-|   ├── libspatialindex/ # MVRtree & MV3Rtree
-
-|   └── boostRtree/ # Rtree
-
 ├── src/ # SILVA core
 
 ├── include/ # PaC-Tree libraries
-
-├── parlaylib/ # parallel primitives
 
 Other files.
 The implementation of polygon support and disk interaction can be found in branch *silva-box*.

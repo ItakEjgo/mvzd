@@ -1,26 +1,6 @@
-# Output log
-*.time
-*.res
-*.txt
-*.log
-*.idx
-
-# Intermediate files
-*.qry
-
-# Input data
-*.pts
-*.in
-
-# Helper scripts
-*.sh
-
-# Output folders
-exp_res/
-exp_scripts/
-debug/
-output/
-log/
-test_code/
 build/
-baselines/SpaceTreeLib
+dataset/
+compile_commands.json
+.cache/
+*.log
+*.qry
