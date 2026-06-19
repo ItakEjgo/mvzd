@@ -4,3 +4,6 @@ compile_commands.json
 .cache/
 *.log
 *.qry
+build/
+build-cmake/
+.cache/
