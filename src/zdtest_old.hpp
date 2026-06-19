@@ -3,16 +3,16 @@
 
 #include <cpam/cpam.h>
 #include <parlay/primitives.h>
-#include "geobase.h"
+#include "geobase_old.h"
 #include <parlay/internal/get_time.h>
 #include <parlay/hash_table.h>
-#include "zdtree.hpp"
+#include "zdtree_old.hpp"
 // #include "seq_zdtree.hpp"
-#include "morton.hpp"
+#include "morton_old.hpp"
 #include "helper/time_loop.h"
 
-#include "hilbert.h"
-#include "binary_rtree.hpp"
+#include "hilbert_old.h"
+#include "binary_rtree_old.hpp"
 
 #define TEST	//	print for correctness check
 

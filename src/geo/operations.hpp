@@ -1,255 +1,8 @@
+#include <parlay/primitives.h>
+#include <parlay/sequence.h>
 #pragma once
-
-#include <bits/stdc++.h>
-#include <parlay/internal/binary_search.h>
-#include "hilbert.h"
-
-namespace geobase
-{
-    using namespace std;
-    using FT = double;
-    // using FT = float;
-    constexpr FT FT_INF_MIN = numeric_limits<FT>::min();
-    constexpr FT FT_INF_MAX = numeric_limits<FT>::max();
-    constexpr FT FT_EPS = numeric_limits<FT>::epsilon();
-
-    struct break_down
-    {
-        FT sort_time = 0;
-        FT leaf_time = 0;
-        FT inte_time = 0;
-        FT split_time = 0;
-        FT slice_time = 0;
-        void clear()
-        {
-            sort_time = 0;
-            leaf_time = 0;
-            inte_time = 0;
-            split_time = 0;
-            slice_time = 0;
-        }
-    };
-
-    inline int dcmp(const FT &x)
-    {
-        if (fabs(x) < FT_EPS)
-            return 0;
-        return x < 0 ? -1 : 1;
-    }
-
-    bool less_msb(unsigned int x, unsigned int y)
-    {
-        return x < y && x < (x ^ y);
-    }
-
-    struct Point
-    {
-        size_t id;
-        FT x, y;
-        unsigned long long morton_id;
-        Point() {}
-        Point(FT _x, FT _y) : x(_x), y(_y) {}
-        Point(size_t _id, FT _x, FT _y) : id(_id), x(_x), y(_y)
-        {
-            // morton_id = mortonIndex();
-            // morton_id = interleave_bits();
-        }
-
-        bool operator==(const Point &p) const
-        {
-            return !(id - p.id) && !dcmp(x - p.x) && !dcmp(y - p.y);
-        }
-
-        friend std::ostream &operator<<(std::ostream &os, const Point &p)
-        {
-            os << fixed << setprecision(6) << p.id << ": (" << p.x << ", " << p.y << ")";
-            // os << "(" << p.x << ", " << p.y << ")";
-            return os;
-        }
-
-        // bool operator < (const Point &b) const{
-        //     return (morton_id < b.morton_id) ||
-        //         (morton_id == b.morton_id && id < b.id);
-        // }
-
-        /* return Z value of this point */
-        unsigned long long interleave_bits() const
-        {
-            // Pun the x and y coordinates as integers: Just re-interpret the bits.
-            //
-            auto ix = static_cast<unsigned int>(x);
-            auto iy = static_cast<unsigned int>(y);
-            // cout << ix << ", " << iy << endl;
-            // cout << bitset<32>(ix) << endl;
-            // cout << bitset<32>(iy) << endl;
-
-            auto ret = 0ull;
-            for (auto i = 0; i < 32; i++)
-            {
-                ret |= ((ix & (1ull << i)) << (i + 1)) | ((iy & (1ull << i)) << i);
-            }
-            // cout << bitset<64>(ret) << endl;
-            return ret;
-        }
-
-        unsigned long long overlap_bits() const
-        {
-            auto ix = static_cast<unsigned long long>(x);
-            auto iy = static_cast<unsigned long long>(y);
-            unsigned long long p[] = {ix, iy};
-            return hilbert_c2i(2, 32, p);
-        }
-
-        long long mortonIndex() const
-        {
-            // Pun the x and y coordinates as integers: Just re-interpret the bits.
-            //
-            auto ix = static_cast<unsigned int>(x);
-            auto iy = static_cast<unsigned int>(y);
-            // cout << ix << " " << iy << endl;
-
-            // Since we're assuming 2s complement arithmetic (99.99% of hardware today),
-            // we'll need to convert these raw integer-punned floats into
-            // their corresponding integer "indices".
-
-            // Smear their sign bits into these for twiddling below.
-            //
-            const auto ixs = static_cast<int>(ix) >> 31;
-            const auto iys = static_cast<int>(iy) >> 31;
-
-            // This is a combination of a fast absolute value and a bias.
-            //
-            // We need to adjust the values so -FLT_MAX is close to 0.
-            //
-            ix = (((ix & 0x7FFFFFFFL) ^ ixs) - ixs) + 0x7FFFFFFFL;
-            iy = (((iy & 0x7FFFFFFFL) ^ iys) - iys) + 0x7FFFFFFFL;
-
-            // Now we have -FLT_MAX close to 0, and FLT_MAX close to UINT_MAX,
-            // with everything else in-between.
-            //
-            // To make this easy, we'll work with x and y as 64-bit integers.
-            //
-            long long xx = ix;
-            long long yy = iy;
-
-            // Dilate and combine as usual...
-
-            xx = (xx | (xx << 16)) & 0x0000ffff0000ffffLL;
-            yy = (yy | (yy << 16)) & 0x0000ffff0000ffffLL;
-
-            xx = (xx | (xx << 8)) & 0x00ff00ff00ff00ffLL;
-            yy = (yy | (yy << 8)) & 0x00ff00ff00ff00ffLL;
-
-            xx = (xx | (xx << 4)) & 0x0f0f0f0f0f0f0f0fLL;
-            yy = (yy | (yy << 4)) & 0x0f0f0f0f0f0f0f0fLL;
-
-            xx = (xx | (xx << 2)) & 0x3333333333333333LL;
-            yy = (yy | (yy << 2)) & 0x3333333333333333LL;
-
-            xx = (xx | (xx << 1)) & 0x5555555555555555LL;
-            yy = (yy | (yy << 1)) & 0x5555555555555555LL;
-
-            return xx | (yy << 1);
-        }
-    };
-
-    typedef pair<Point, Point> Bounding_Box;
-
-    struct diff_type{
-        size_t add_cnt, remove_cnt;
-        parlay::sequence<Point> add, remove;
-        diff_type(){
-            add_cnt = 0;
-            remove_cnt = 0;
-        }
-        diff_type(size_t add_sz, size_t remove_sz){
-            add_cnt = 0;
-            remove_cnt = 0;
-            add = parlay::sequence<Point>::uninitialized(add_sz);
-            remove = parlay::sequence<Point>::uninitialized(remove_sz);
-        }
-        void add_point(Point &p, bool reverse = false){
-            if (!reverse){
-                parlay::assign_uninitialized(add[add_cnt++], p);
-            }
-            else{
-                parlay::assign_uninitialized(remove[remove_cnt++], p);
-            }
-        }
-        void remove_point(Point &p, bool reverse = false){
-            if (!reverse){
-                parlay::assign_uninitialized(remove[remove_cnt++], p);
-            }
-            else{
-                parlay::assign_uninitialized(add[add_cnt++], p);
-            }
-        }
-        void compact(){
-            add.resize(add_cnt);
-            remove.resize(remove_cnt);
-        }
-        void reset(){
-            add_cnt = 0;
-            remove_cnt = 0;
-        }
-        void reset(size_t add_sz, size_t remove_sz){
-            add_cnt = 0;
-            remove_cnt = 0;
-            add = parlay::sequence<Point>::uninitialized(add_sz);
-            remove = parlay::sequence<Point>::uninitialized(remove_sz);
-        }
-    };
-
-    template <class T>
-    auto read_pts(T &P, ifstream &fin, bool real_data = false)
-    {
-        if (!real_data)
-        {
-            size_t n, d;
-            fin >> n >> d;
-            P.resize(n);
-            size_t id;
-            FT x, y;
-            FT x_min(FT_INF_MAX), x_max(FT_INF_MIN), y_min(FT_INF_MAX), y_max(FT_INF_MIN);
-            for (size_t i = 0; i < n; i++)
-            {
-                // fin >> id >> x >> y;
-                fin >> x >> y;
-                x_max = max(x_max, x);
-                x_min = min(x_min, x);
-                y_max = max(y_max, y);
-                y_min = min(y_min, y);
-                id = i;
-                auto cur_p = Point(id, x, y);
-                P[i] = cur_p;
-            }
-            return Bounding_Box({Point(x_min, y_min), Point(x_max, y_max)});
-        }
-        else
-        {
-            size_t id;
-            FT x, y;
-            FT x_min(FT_INF_MAX), x_max(FT_INF_MIN), y_min(FT_INF_MAX), y_max(FT_INF_MIN);
-            P.clear();
-            while (fin >> id >> x >> y)
-            {
-                x *= 1000000;
-                y *= 1000000;
-                if (x < 0 || y < 0)
-                {
-                    continue; // ignore outliers
-                }
-                x_max = max(x_max, x);
-                x_min = min(x_min, x);
-                y_max = max(y_max, y);
-                y_min = min(y_min, y);
-                auto cur_p = Point(id, x, y);
-                P.emplace_back(cur_p);
-            }
-            return Bounding_Box({Point(x_min, y_min), Point(x_max, y_max)});
-        }
-    }
-
+#include "point.hpp"
+namespace geobase {
     template <typename PT>
     auto filter_diff_results(PT &add, PT &remove)
     {
@@ -281,18 +34,6 @@ namespace geobase
         while (j < sorted_remove.size())
             delete_points.emplace_back(sorted_remove[j++]);
         return make_tuple(insert_points, delete_points, update_points);
-    }
-
-    template <class T>
-    void print_binary(T x)
-    {
-        cout << bitset<sizeof(x) * 8>(x) << endl;
-    }
-
-    template <class MBR>
-    void print_mbr(MBR &mbr)
-    {
-        cout << fixed << setprecision(6) << "[(" << mbr.first.x << ", " << mbr.first.y << "), (" << mbr.second.x << ", " << mbr.second.y << ")" << "]" << endl;
     }
 
     template <class MBR>
@@ -422,53 +163,7 @@ namespace geobase
         return true;
     }
 
-    template <class T>
-    auto generate_range_query(T &P, size_t n)
-    {
-        auto id1 = rand() % n;
-        auto id2 = rand() % n;
-        FT xmin = min(P[id1].x, P[id2].x),
-           xmax = max(P[id1].x, P[id2].x),
-           ymin = min(P[id1].y, P[id2].y),
-           ymax = max(P[id1].y, P[id2].y);
-        return make_pair(Point(xmin, ymin), Point(xmax, ymax));
-    }
-
-    template <class In>
-    auto read_range_query(In qry_in)
-    {
-        ifstream fin(qry_in);
-        size_t n, d;
-        fin >> n >> d;
-        parlay::sequence<Bounding_Box> ret(n);
-        for (size_t i = 0; i < n; i++)
-        {
-            fin >> ret[i].first.x >> ret[i].first.y >> ret[i].second.x >> ret[i].second.y;
-        }
-        return ret;
-    }
-
-    template <class In>
-    auto read_range_query(In qry_in, size_t q_type, size_t &maxSize, bool is_real = false)
-    {
-        ifstream fin(qry_in);
-        if (q_type == 8)
-        { // range report, need maxSize
-            fin >> maxSize;
-        }
-        size_t n, d;
-        fin >> n >> d;
-        parlay::sequence<Bounding_Box> ret(n);
-        parlay::sequence<size_t> cnt(n);
-        for (size_t i = 0; i < n; i++)
-        {
-            fin >> cnt[i] >> ret[i].first.x >> ret[i].first.y >> ret[i].second.x >> ret[i].second.y;
-        }
-        return make_tuple(cnt, ret);
-    }
-
-    // data type/helper functions for nearest neighbor search
-    typedef pair<Point, FT> nn_pair;
+typedef pair<Point, FT> nn_pair;
 
     struct nn_pair_cmp
     {
@@ -615,48 +310,6 @@ namespace geobase
         return make_tuple(L_box, R_box, rx_prefix, ry_prefix);
     }
 
-    auto get_delete_p(parlay::sequence<Point> &lhs, parlay::sequence<Point> &P, size_t l, size_t r)
-    {
-        auto ret = parlay::sequence<Point>::uninitialized(lhs.size());
-        auto pt_cmp = [&](auto &pt1, auto &pt2){
-            if (pt1.morton_id == pt2.morton_id){
-                if (pt1.id == pt2.id){
-                    return 0;
-                }
-                else{
-                    if (pt1.id < pt2.id)
-                        return 1;
-                    else
-                        return 2;
-                }
-            }
-            else{
-                if (pt1.morton_id < pt2.morton_id)
-                    return 1;
-                else
-                    return 2;
-            }
-        };
-        size_t i = 0, j = l, cnt = 0;
-        while (i < lhs.size() && j < r){
-            auto flag = pt_cmp(lhs[i], P[j]);
-            if (!flag){ // point should be deleted
-                i++, j++;
-            }
-            else if (flag == 1){ // first smaller, in A not in B
-                parlay::assign_uninitialized(ret[cnt++], lhs[i++]);
-            }
-            else{ //  second smaller, in B not in A
-                j++;
-            }
-        }
-        while (i < lhs.size()){
-            parlay::assign_uninitialized(ret[cnt++], lhs[i++]);
-        }
-        ret.resize(cnt);
-        return ret;
-    }
-
     template <typename Func>
     auto get_delete_p(parlay::sequence<Point> &lhs, parlay::sequence<Point> &P, size_t l, size_t r, Func &f)
     {
@@ -708,102 +361,10 @@ namespace geobase
         return ret;
     }
 
-    // delete rhs from lhs, merge by morton_id and point id
-    template <typename T, typename P, typename DIFF>
-    auto merge_pts(P &a, T &b, DIFF &ret_diff, bool reverse = false){
-        size_t i = 0, j = 0;
-        //  0: same point, 1: first is smaller, 2: second is smaller
-        auto pt_cmp = [&](const auto &pt1, const auto &pt2){
-            if (pt1.morton_id == pt2.morton_id){
-                if (pt1.id == pt2.id){
-                    return 0;
-                }
-                else{
-                    return pt1.id < pt2.id ? 1 : 2;
-                }
-            }
-            else{
-                return pt1.morton_id < pt2.morton_id ? 1 : 2;
-            }
-        };
-
-        while (i < a.size() && j < b.size()){
-            auto flag = pt_cmp(a[i], b[j]);
-            if (!flag){ // same point
-                i++, j++;
-            }
-            else if (flag == 1){ // first smaller, in A not in B
-                // parlay::assign_uninitialized(removed[cnt_remove++], a[i++]);
-                ret_diff.remove_point(a[i], reverse);
-                i++;
-            }
-            else{ //  second smaller, in B not in A
-                // parlay::assign_uninitialized(added[cnt_add++], b[j++]);
-                ret_diff.add_point(b[j], reverse);
-                j++;
-            }
-        }
-        while (i < a.size()){
-            // parlay::assign_uninitialized(removed[cnt_remove++], a[i++]);
-            ret_diff.remove_point(a[i], reverse);
-            i++;
-        }
-        while (j < b.size()){
-            // parlay::assign_uninitialized(added[cnt_add++], b[j++]);
-            ret_diff.add_point(b[j], reverse);
-            j++;
-        }
-
-        return;
-    }
-
-    // delete rhs from lhs, merge by morton_id and point id
-    template <typename T, typename P>
-    auto merge_pts(P &a, T &b){
-        size_t i = 0, j = 0;
-        //  0: same point, 1: first is smaller, 2: second is smaller
-        auto pt_cmp = [&](const auto &pt1, const auto &pt2){
-            if (pt1.morton_id == pt2.morton_id){
-                if (pt1.id == pt2.id){
-                    return 0;
-                }
-                else{
-                    return pt1.id < pt2.id ? 1 : 2;
-                }
-            }
-            else{
-                return pt1.morton_id < pt2.morton_id ? 1 : 2;
-            }
-        };
-
-        auto added = parlay::sequence<Point>::uninitialized(b.size());
-        auto removed = parlay::sequence<Point>::uninitialized(a.size());
-
-        size_t cnt_add = 0, cnt_remove = 0;
-
-        while (i < a.size() && j < b.size()){
-            auto flag = pt_cmp(a[i], b[j]);
-            if (!flag){ // same point
-                i++, j++;
-            }
-            else if (flag == 1){ // first smaller, in A not in B
-                parlay::assign_uninitialized(removed[cnt_remove++], a[i++]);
-            }
-            else
-            { //  second smaller, in B not in A
-                parlay::assign_uninitialized(added[cnt_add++], b[j++]);
-            }
-        }
-        while (i < a.size()){
-            parlay::assign_uninitialized(removed[cnt_remove++], a[i++]);
-        }
-        while (j < b.size()){
-            parlay::assign_uninitialized(added[cnt_add++], b[j++]);
-        }
-        removed.resize(cnt_remove);
-        added.resize(cnt_add);
-
-        return make_tuple(added, removed);
+    auto get_delete_p(parlay::sequence<Point> &lhs, parlay::sequence<Point> &P, size_t l, size_t r)
+    {
+        auto f_true = [](const auto &) { return true; };
+        return get_delete_p(lhs, P, l, r, f_true);
     }
 
     // delete rhs from lhs, merge by morton_id and point id, apply F
@@ -834,7 +395,6 @@ namespace geobase
             else if (flag == 1){ // first smaller, in A not in B
                 if (f(a[i])) {
                     ret_diff.remove_point(a[i], reverse);
-                    // parlay::assign_uninitialized(ret_diff.remove[ret_diff.remove_cnt++], a[i]);
                 }
 
                 i++;
@@ -842,7 +402,6 @@ namespace geobase
             else{ //  second smaller, in B not in A
                 if (f(b[j])) {
                     ret_diff.add_point(b[j], reverse);
-                    // parlay::assign_uninitialized(ret_diff.add[ret_diff.add_cnt++], b[j]);
                 }
                 j++;
             }
@@ -850,19 +409,34 @@ namespace geobase
         while (i < a.size()){
             if (f(a[i])) {
                 ret_diff.remove_point(a[i], reverse);
-                // parlay::assign_uninitialized(ret_diff.remove[ret_diff.remove_cnt++], a[i]);
             }
             i++;
         }
         while (j < b.size()){
             if (f(b[j])){
                 ret_diff.add_point(b[j], reverse);
-                // parlay::assign_uninitialized(ret_diff.add[ret_diff.add_cnt++], b[j]);
             } 
             j++;
         }
         
         return;
+    }
+
+    // delete rhs from lhs, merge by morton_id and point id
+    template <typename T, typename P, typename DIFF>
+    auto merge_pts(P &a, T &b, DIFF &ret_diff, bool reverse = false){
+        auto f_true = [](const auto &) { return true; };
+        return merge_pts(a, b, f_true, ret_diff, reverse);
+    }
+
+    // delete rhs from lhs, merge by morton_id and point id
+    template <typename T, typename P>
+    auto merge_pts(P &a, T &b){
+        diff_type ret_diff(b.size(), a.size());
+        auto f_true = [](const auto &) { return true; };
+        merge_pts(a, b, f_true, ret_diff, false);
+        ret_diff.compact();
+        return make_tuple(ret_diff.add, ret_diff.remove);
     }
     
 

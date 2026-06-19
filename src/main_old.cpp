@@ -2,25 +2,31 @@
 
 #include <cpam/cpam.h>
 #include <parlay/primitives.h>
-#include "geo/point.hpp"
-#include "geo/operations.hpp"
-#include "geo/io.hpp"
+#include "geobase_old.h"
 #include <parlay/internal/get_time.h>
 #include <parlay/hash_table.h>
 #include <cpam/parse_command_line.h>
-#include "mvq.hpp"
-#include "cpamz.hpp"
+#include "zdtree_old.hpp"
+#include "morton_old.hpp"
 #include "helper/time_loop.h"
 
-#include "global_config.hpp"
-#include "test/test_mvq.hpp"
-#include "test/test_cpambb.hpp"
-#include "test/test_cpamz.hpp"
+#include "zdtest_old.hpp"
 // #include "seq_zdtree.hpp"
 
 using namespace std;
 
 // #define DEBUG
+
+#ifdef SMALL_TEST
+size_t leaf_size = 32;
+#else
+size_t leaf_size = 32;
+#endif
+size_t maxSize = 100;
+geobase::Bounding_Box largest_mbr;
+// Breakdown time evaluation
+break_down zd_build_break_down;
+break_down cpam_build_break_down;
 
 void line_splitter(){
 	cout << "-------------------------------------------------------" << endl;
@@ -30,14 +36,14 @@ void line_splitter(){
 // void test(string input, int q_type, int batch_percent, int use_real = 0){
 // 	ifstream fin(input);
 // 	parlay::sequence<geobase::Point> P;
-// 	mvq::Config::get().largest_mbr = geobase::read_pts(P, fin, use_real);
+// 	largest_mbr = geobase::read_pts(P, fin, use_real);
 // 	if (!use_real){
 // 		string count_qry_file = "range_count.qry";
 // 		// string count_qry_file = "test.qry";
 // 		string report_qry_file = "range_report.qry";
 // 		// string report_qry_file = "test.qry";
-// 		auto range_count_querys = geobase::read_range_query(count_qry_file, 4, mvq::Config::get().maxSize);
-// 		auto range_report_querys = geobase::read_range_query(report_qry_file, 8, mvq::Config::get().maxSize);
+// 		auto range_count_querys = geobase::read_range_query(count_qry_file, 4, maxSize);
+// 		auto range_report_querys = geobase::read_range_query(report_qry_file, 8, maxSize);
 
 // 		/* Big Test */
 // 		//CPAMBB
@@ -156,7 +162,7 @@ void run(int argc, char** argv){
 	/* read input file */
 	ifstream fin(input_file);
 	parlay::sequence<geobase::Point> P;
-	mvq::Config::get().largest_mbr = geobase::read_pts(P, fin, is_real);	//	change to true if id is contained.
+	largest_mbr = geobase::read_pts(P, fin, is_real);	//	change to true if id is contained.
 
 	if (task == "debug"){
 		cout << "total points: " << P.size() << endl;
@@ -258,7 +264,7 @@ void run(int argc, char** argv){
 			string query_file = cmd.getOptionValue("-r");
 			auto s = cmd.getOptionIntValue("-s", 0);
 			
-			auto [cnt, range_count_querys] = geobase::read_range_query(query_file, 8, mvq::Config::get().maxSize);
+			auto [cnt, range_count_querys] = geobase::read_range_query(query_file, 8, maxSize);
 			if (s == 1){
 			// test single point
 				for (size_t i = 0; i < range_count_querys.size(); i++){
@@ -289,7 +295,7 @@ void run(int argc, char** argv){
 			string query_file = cmd.getOptionValue("-r");
 			auto s = cmd.getOptionIntValue("-s", 0);
 
-			auto [cnt, range_report_querys] = geobase::read_range_query(query_file, 8, mvq::Config::get().maxSize);
+			auto [cnt, range_report_querys] = geobase::read_range_query(query_file, 8, maxSize);
 			if (s == 1){
 				// test single point
 				for (size_t i = 0; i < range_report_querys.size(); i++){
@@ -421,7 +427,7 @@ void run(int argc, char** argv){
 
 	if (task == "spatial-diff"){
 		string query_file = cmd.getOptionValue("-r");
-		auto [cnt, queries] = geobase::read_range_query(query_file, 8, mvq::Config::get().maxSize);
+		auto [cnt, queries] = geobase::read_range_query(query_file, 8, maxSize);
 		// size_t batch_size = 10000;
         size_t ratio = 5;
 		// queries = queries.substr(0, 50000);
@@ -523,7 +529,7 @@ void run(int argc, char** argv){
 		};
 
 		// string query_file = cmd.getOptionValue("-r");
-		// auto [cnt, range_report_querys] = geobase::read_range_query(query_file, 8, mvq::Config::get().maxSize);
+		// auto [cnt, range_report_querys] = geobase::read_range_query(query_file, 8, maxSize);
 		parlay::sequence<Bounding_Box> range_report_querys = {};
 		bool early_end = false;
 			

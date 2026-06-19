@@ -4,7 +4,7 @@
 
 #include <cpam/cpam.h>
 #include <parlay/primitives.h>
-#include "geobase.h"
+#include "geobase_old.h"
 #include <parlay/internal/get_time.h>
 #include "pam/utils.h"
 

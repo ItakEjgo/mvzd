@@ -5,7 +5,9 @@
 #include <cpam/cpam.h>
 // #include <pam/pam.h>
 #include <parlay/primitives.h>
-#include "geobase.h"
+#include "geo/point.hpp"
+#include "geo/operations.hpp"
+#include "geo/io.hpp"
 #include <parlay/internal/get_time.h>
 #include "pam/utils.h"
 
