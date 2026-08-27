@@ -1,3 +1,4 @@
+#include <atomic>
 #pragma once
 // --- From mvzd/src/mvq/node.hpp ---
 #include "global_config.hpp"
@@ -11,6 +12,8 @@
 
 
 namespace mvq{
+    inline std::atomic<size_t> global_live_mem(0);
+
 
 	using namespace std;
 	using namespace geobase;
@@ -45,7 +48,8 @@ namespace mvq{
 		shared_ptr<BaseNode> l_son, r_son;
 		size_t num_pts;
 
-		InteNode(): l_son(nullptr), r_son(nullptr), num_pts(0){}
+		InteNode(): l_son(nullptr), r_son(nullptr), num_pts(0){ mvq::global_live_mem.fetch_add(sizeof(InteNode), std::memory_order_relaxed); }
+		virtual ~InteNode() { mvq::global_live_mem.fetch_sub(sizeof(InteNode), std::memory_order_relaxed); }
 		// InteNode(InteNode &x): l_son(x->l_son), r_son(x->r_son), num_pts(x->num_pts){}
 		
 		virtual bool is_leaf(){ return false; }
@@ -55,6 +59,19 @@ namespace mvq{
 	struct LeafNode: BaseNode{
 		// sequence<Point> records;
 		sequence<Point> records = sequence<Point>::uninitialized(32);
+		size_t tracked_mem = 0;
+		void update_mem() {
+			size_t current = sizeof(LeafNode) + records.capacity() * sizeof(Point);
+			if (current > tracked_mem) {
+				mvq::global_live_mem.fetch_add(current - tracked_mem, std::memory_order_relaxed);
+			} else if (current < tracked_mem) {
+				mvq::global_live_mem.fetch_sub(tracked_mem - current, std::memory_order_relaxed);
+			}
+			tracked_mem = current;
+		}
+		virtual ~LeafNode() {
+			mvq::global_live_mem.fetch_sub(tracked_mem, std::memory_order_relaxed);
+		}
 
 		template<typename Records>
 		LeafNode(Records &r){
@@ -67,6 +84,7 @@ namespace mvq{
 				// records[i] = r[i];
 			}
 			records.resize(r.size());
+			update_mem();
 		}
 
 		template<typename Records, typename Func>
@@ -82,6 +100,7 @@ namespace mvq{
 				// records[i] = r[i];
 			}
 			records.resize(i);
+			update_mem();
 		}
 
 		// LeafNode(LeafNode &x): records(x->records){}
@@ -97,11 +116,10 @@ namespace mvq{
 		}
 	};
 
-}
+
 
 // --- From mvzd/src/mvq/tree.hpp ---
-namespace mvq {
-	class Tree{
+class Tree{
 	public:
 		size_t visited_leaf = 0;
 		size_t visited_inte = 0;
@@ -521,6 +539,7 @@ namespace mvq {
 			auto cur_leaf = static_cast<LeafNode*>(x.get());
 			if (!b || cur_leaf->records.size() + P.size() <= leaf_size){	// current leaf is not full
 				cur_leaf->records = parlay::merge(cur_leaf->records, parlay::make_slice(P), less);
+				cur_leaf->update_mem();
 				return;
 			}
 			else{
@@ -861,7 +880,7 @@ namespace mvq {
 
 	template <class Out>
 	void Tree::range_report(shared_ptr<BaseNode> &x, Bounding_Box &query_mbr, Bounding_Box &cur_mbr, size_t &cnt, Out &out){
-		range_report_node(x, query_mbr, cur_mbr, 0.0, 0.0, 32, true, cnt, out);
+		range_report_node(x, query_mbr, cur_mbr, 0.0, 0.0, 64, true, cnt, out);
 	}
 
 	#ifdef USE_MBR
@@ -874,9 +893,13 @@ namespace mvq {
 				if (nn_res.size() < k){
 					nn_res.push({p, cur_sqrdis});
 				}
-				else if (cur_sqrdis < nn_res.top().second){
-					nn_res.pop();
-					nn_res.push({p, cur_sqrdis});
+				else {
+					nn_pair current_pair = {p, cur_sqrdis};
+					nn_pair_cmp cmp;
+					if (cmp(current_pair, nn_res.top())) {
+						nn_res.pop();
+						nn_res.push(current_pair);
+					}
 				}
 			}
 			return;
@@ -886,18 +909,18 @@ namespace mvq {
 		if (cur_inte->l_son != nullptr) l_son_sqrdis = point_mbr_sqrdis(query_point, cur_inte->l_son->mbr);
 		if (cur_inte->r_son != nullptr) r_son_sqrdis = point_mbr_sqrdis(query_point, cur_inte->r_son->mbr);
 		if (l_son_sqrdis <= r_son_sqrdis){ // first go left
-			if (nn_res.size() < k || l_son_sqrdis < nn_res.top().second){
+			if (nn_res.size() < k || l_son_sqrdis <= nn_res.top().second){
 				knn_report_node(cur_inte->l_son, k, query_point, nn_res);
 			}
-			if (nn_res.size() < k || r_son_sqrdis < nn_res.top().second){
+			if (nn_res.size() < k || r_son_sqrdis <= nn_res.top().second){
 				knn_report_node(cur_inte->r_son, k, query_point, nn_res);
 			}
 		}
 		else{	// first go right
-			if (nn_res.size() < k || r_son_sqrdis < nn_res.top().second){
+			if (nn_res.size() < k || r_son_sqrdis <= nn_res.top().second){
 				knn_report_node(cur_inte->r_son, k, query_point, nn_res);
 			}
-			if (nn_res.size() < k || l_son_sqrdis < nn_res.top().second){
+			if (nn_res.size() < k || l_son_sqrdis <= nn_res.top().second){
 				knn_report_node(cur_inte->l_son, k, query_point, nn_res);
 			}
 		}
@@ -927,9 +950,13 @@ namespace mvq {
 				if (nn_res.size() < k){
 					nn_res.push({p, cur_sqrdis});
 				}
-				else if (cur_sqrdis < nn_res.top().second){
-					nn_res.pop();
-					nn_res.push({p, cur_sqrdis});
+				else {
+					nn_pair current_pair = {p, cur_sqrdis};
+					nn_pair_cmp cmp;
+					if (cmp(current_pair, nn_res.top())) {
+						nn_res.pop();
+						nn_res.push(current_pair);
+					}
 				}
 			}
 			return;
@@ -946,18 +973,18 @@ namespace mvq {
 		}
 		
 		if (l_son_sqrdis <= r_son_sqrdis){ // first go left
-			if (nn_res.size() < k || l_son_sqrdis < nn_res.top().second){
+			if (nn_res.size() < k || l_son_sqrdis <= nn_res.top().second){
 				knn_report_node(cur_inte->l_son, k, query_point, L_box, x_prefix, y_prefix, b - 1, !x_splitter, nn_res);
 			}
-			if (nn_res.size() < k || r_son_sqrdis < nn_res.top().second){
+			if (nn_res.size() < k || r_son_sqrdis <= nn_res.top().second){
 				knn_report_node(cur_inte->r_son, k, query_point, R_box, rx_prefix, ry_prefix, b - 1, !x_splitter, nn_res);
 			}
 		}
 		else{	// first go right
-			if (nn_res.size() < k || r_son_sqrdis < nn_res.top().second){
+			if (nn_res.size() < k || r_son_sqrdis <= nn_res.top().second){
 				knn_report_node(cur_inte->r_son, k, query_point, R_box, rx_prefix, ry_prefix, b - 1, !x_splitter, nn_res);
 			}
-			if (nn_res.size() < k || l_son_sqrdis < nn_res.top().second){
+			if (nn_res.size() < k || l_son_sqrdis <= nn_res.top().second){
 				knn_report_node(cur_inte->l_son, k, query_point, L_box, x_prefix, y_prefix, b - 1, !x_splitter, nn_res);
 			}
 		}
@@ -1334,6 +1361,7 @@ namespace mvq {
 			auto cur_leaf = static_cast<LeafNode*>(x.get());
 			if (!b || cur_leaf->records.size() + P.size() <= leaf_size){	// current leaf is not full
 				cur_leaf->records = parlay::merge(cur_leaf->records, parlay::make_slice(P), less);
+				cur_leaf->update_mem();
 				return;
 			}
 			else{
@@ -1383,6 +1411,7 @@ namespace mvq {
 			auto cur_leaf = static_cast<LeafNode*>(x.get());
 			auto tmp_records = parlay::to_sequence(P);
 			cur_leaf->records = get_delete_p(cur_leaf->records, tmp_records, 0, tmp_records.size());
+			cur_leaf->update_mem();
 			if (!cur_leaf->records.size()) x.reset();
 			return;
 		}
@@ -1454,4 +1483,3 @@ namespace mvq {
 	}
 
 }
-

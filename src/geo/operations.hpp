@@ -167,7 +167,7 @@ typedef pair<Point, FT> nn_pair;
 
     struct nn_pair_cmp
     {
-        bool operator()(nn_pair &lhs, nn_pair &rhs)
+        bool operator()(const nn_pair &lhs, const nn_pair &rhs) const
         {
             return lhs.second < rhs.second ||
                    (lhs.second == rhs.second && lhs.first.id > rhs.first.id);

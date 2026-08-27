@@ -1,0 +1,4 @@
+Algo | Batch | Fork_ms | Commit_ms | Merge_ms | Mem_MB
+Rlog_NoSnap | 1 | 0 | 5.692 | 0 | 218.993
+Rlog_NoSnap | 0 | 0 | 5.456 | 0 | 228.115
+Rlog_NoSnap | SUMMARY | 0 | 0 | 31.864 | 246.36

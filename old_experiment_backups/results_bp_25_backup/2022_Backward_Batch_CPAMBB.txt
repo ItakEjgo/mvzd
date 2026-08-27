@@ -1,0 +1,6 @@
+Algo | Batch | Fork_ms | Commit_ms | Merge_ms | Mem_MB
+CPAMBB | 3 | 0 | 41.344 | 0 | 136.658
+CPAMBB | 2 | 0 | 72.244 | 0 | 142.202
+CPAMBB | 1 | 0 | 68.723 | 0 | 146.599
+CPAMBB | 0 | 0 | 72.17 | 0 | 151.592
+CPAMBB | SUMMARY | 0 | 0 | 2132.81 | 162.026

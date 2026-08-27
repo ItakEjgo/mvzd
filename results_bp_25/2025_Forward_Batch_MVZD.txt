@@ -1,0 +1,6 @@
+Algo | Batch | Fork_ms | Commit_ms | Merge_ms | Mem_MB
+MVZD | 0 | 0 | 6.767 | 0 | 605.886
+MVZD | 1 | 0 | 7.076 | 0 | 609.002
+MVZD | 2 | 0 | 6.372 | 0 | 611.834
+MVZD | 3 | 0 | 8.364 | 0 | 615.564
+MVZD | SUMMARY | 0 | 0 | 55.548 | 626.631
