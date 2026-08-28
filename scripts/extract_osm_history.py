@@ -15,21 +15,23 @@ class YearlyExtractor(osmium.SimpleHandler):
     def __init__(self):
         super(YearlyExtractor, self).__init__()
         self.files = {}
+        self.buffers = {}
         self.count = 0
 
-    def get_file(self, year):
+    def get_file_and_buffer(self, year):
         if year not in self.files:
             path = os.path.join(OUTPUT_DIR, f"{year}.csv")
             f = open(path, 'w', encoding='utf-8')
             f.write("node_id,version,visible,changeset,timestamp,uid,lon,lat\n")
             self.files[year] = f
-        return self.files[year]
+            self.buffers[year] = []
+        return self.files[year], self.buffers[year]
 
     def node(self, n):
         self.count += 1
         
         year = n.timestamp.year
-        f = self.get_file(year)
+        f, buf = self.get_file_and_buffer(year)
 
         visible = not n.deleted
         
@@ -40,12 +42,17 @@ class YearlyExtractor(osmium.SimpleHandler):
         lon = n.location.lon + 180.0 if n.location.valid() else ""
         lat = n.location.lat + 90.0 if n.location.valid() else ""
         ts_str = n.timestamp.isoformat()
-
         row = f"{n.id},{n.version},{visible},{n.changeset},{ts_str},{n.uid},{lon},{lat}\n"
-        f.write(row)
-        
+        buf.append(row)
+        if len(buf) >= 20000:
+            f.write("".join(buf))
+            buf.clear()
     def close(self):
-        for f in self.files.values():
+        for year, f in self.files.items():
+            buf = self.buffers[year]
+            if buf:
+                f.write("".join(buf))
+                buf.clear()
             f.close()
 
 if __name__ == '__main__':
