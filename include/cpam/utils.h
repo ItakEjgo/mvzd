@@ -11,6 +11,8 @@
 //bool start_logging = false;
 
 namespace cpam {
+inline std::atomic<size_t> cpam_live_mem(0);
+inline std::atomic<size_t> cpam_query_nodes_touched(0);
 namespace utils {
 
   //#define LOG(x) (std::cout << x << std::endl)

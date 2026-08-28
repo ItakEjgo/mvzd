@@ -94,6 +94,7 @@ struct aug_node : public basic_node<balance,
       std::get<0>((a->entry)).~ET();
       std::get<1>((a->entry)).~AT();
       allocator::free(a);
+      cpam_live_mem.fetch_sub(sizeof(regular_node), std::memory_order_relaxed);
     } else {
       auto c = cast_to_compressed(va);
       uint8_t* data_start = (((uint8_t*)c) + sizeof(aug_compressed_node));
@@ -101,6 +102,7 @@ struct aug_node : public basic_node<balance,
       AugEntryEncoder::destroy(data_start, c->s);
       auto array_size = c->size_in_bytes;
       utils::free_array<uint8_t>((uint8_t*)va, array_size);
+      cpam_live_mem.fetch_sub(array_size, std::memory_order_relaxed);
     }
   }
 
@@ -238,6 +240,7 @@ struct aug_node : public basic_node<balance,
     size_t encoded_size = AugEntryEncoder::encoded_size(e, s);
     size_t node_size = sizeof(aug_compressed_node) + encoded_size;
     aug_compressed_node* c_node = (aug_compressed_node*)utils::new_array_no_init<uint8_t>(node_size);
+    cpam_live_mem.fetch_add(node_size, std::memory_order_relaxed);
 
     c_node->r = 1;
     c_node->s = s;

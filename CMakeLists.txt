@@ -25,3 +25,10 @@ add_executable(main
 
 target_link_libraries(main PRIVATE Threads::Threads jemalloc)
 set_target_properties(main PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+add_executable(verify_bench 
+    verify_bench.cpp
+    src/hilbert.c
+)
+target_link_libraries(verify_bench PRIVATE Threads::Threads jemalloc)
+set_target_properties(verify_bench PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}")

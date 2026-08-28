@@ -320,6 +320,7 @@ struct augmented_ops : Map {
 
   template<class F, typename Out>
   static void range_report_filter2(node* b, const F &f, int64_t &cnt, Out &out, size_t granularity=kNodeLimit) {
+    cpam_query_nodes_touched.fetch_add(1, std::memory_order_relaxed);
     if (!b) return;
     auto cur_aug = aug_val(b);
     auto flag = f(cur_aug.first);
@@ -377,6 +378,7 @@ struct augmented_ops : Map {
   //  F is point-point dis, F2 is point-mbr dis
   template<typename F, typename F2, typename Out>
   static void knn_filter(node* b, const F &f, const F2 &f2, size_t &k, Out &out) {
+    cpam_query_nodes_touched.fetch_add(1, std::memory_order_relaxed);
     if (!b) return;
 
     auto pt_check = [&](const auto &cur_pt){

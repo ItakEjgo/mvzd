@@ -80,6 +80,7 @@ public:
 
   static regular_node* make_regular_node(const ET& e) {
     regular_node* o = allocator::alloc();
+    cpam_live_mem.fetch_add(sizeof(regular_node), std::memory_order_relaxed);
     o->r = 1;
     o->r |= kTopBit;
     parlay::assign_uninitialized(o->entry, e);
@@ -195,6 +196,7 @@ public:
     size_t encoded_size = EntryEncoder::encoded_size(e, s);
     size_t node_size = 3*sizeof(node_size_t) + encoded_size;
     compressed_node* c_node = (compressed_node*)utils::new_array_no_init<uint8_t>(node_size);
+    cpam_live_mem.fetch_add(node_size, std::memory_order_relaxed);
     //compressed_node* c_node = (compressed_node*)complex_allocator::alloc();
 
     c_node->r = 1;
@@ -241,12 +243,14 @@ public:
       auto a = cast_to_regular(va);
       (a->entry).~ET();
       allocator::free(a);
+      cpam_live_mem.fetch_sub(sizeof(regular_node), std::memory_order_relaxed);
     } else {
       auto c = cast_to_compressed(va);
       uint8_t* data_start = (((uint8_t*)c) + 3*sizeof(node_size_t));
       EntryEncoder::destroy(data_start, c->s);
       auto array_size = c->size_in_bytes;
       utils::free_array<uint8_t>((uint8_t*)va, array_size);
+      cpam_live_mem.fetch_sub(array_size, std::memory_order_relaxed);
     }
   }
 

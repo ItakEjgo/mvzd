@@ -13,6 +13,7 @@
 
 namespace mvq{
     inline std::atomic<size_t> global_live_mem(0);
+    inline std::atomic<size_t> query_nodes_touched(0);
 
 
 	using namespace std;
@@ -848,6 +849,7 @@ namespace mvq {
 
 	template <class Out> 
 	void Tree::range_report_node(shared_ptr<BaseNode> &x, Bounding_Box &query_mbr, Bounding_Box &cur_mbr, FT x_prefix, FT y_prefix, size_t b, bool x_splitter, size_t &cnt, Out &out){
+		mvq::query_nodes_touched.fetch_add(1, std::memory_order_relaxed);
 		if (!x){
 			return;
 		}
@@ -942,6 +944,7 @@ namespace mvq {
 
 	template <class T>
 	void Tree::knn_report_node(shared_ptr<BaseNode> &x, size_t &k, Point query_point, Bounding_Box &cur_mbr, FT x_prefix, FT y_prefix, size_t b, bool x_splitter, T &nn_res){
+		mvq::query_nodes_touched.fetch_add(1, std::memory_order_relaxed);
 		if (!x) return;
 		if (x->is_leaf()){
 			auto cur_leaf = static_cast<LeafNode*>(x.get());
