@@ -33,8 +33,12 @@ class YearlyExtractor(osmium.SimpleHandler):
 
         visible = not n.deleted
         
-        lon = n.location.lon if n.location.valid() else ""
-        lat = n.location.lat if n.location.valid() else ""
+        if self.count % 1000000 == 0:
+            print(f"Processed {self.count} nodes...", flush=True)
+
+        # Shift coordinates to strictly positive domain (first quadrant)
+        lon = n.location.lon + 180.0 if n.location.valid() else ""
+        lat = n.location.lat + 90.0 if n.location.valid() else ""
         ts_str = n.timestamp.isoformat()
 
         row = f"{n.id},{n.version},{visible},{n.changeset},{ts_str},{n.uid},{lon},{lat}\n"
