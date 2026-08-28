@@ -1,3 +1,0 @@
-Algo | Batch | Fork_ms | Commit_ms | Merge_ms | Mem_MB
-Rlog_3yr | 0 | 0 | 0.404 | 0 | 306.324
-Rlog_3yr | SUMMARY | 0 | 0 | 0.245 | 306.324

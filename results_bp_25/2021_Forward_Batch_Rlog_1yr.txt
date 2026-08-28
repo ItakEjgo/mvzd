@@ -1,6 +1,0 @@
-Algo | Batch | Fork_ms | Commit_ms | Merge_ms | Mem_MB
-Rlog_1yr | 0 | 0 | 7.525 | 0 | 76.9141
-Rlog_1yr | 1 | 0 | 7.085 | 0 | 88.6523
-Rlog_1yr | 2 | 0 | 7.092 | 0 | 100.508
-Rlog_1yr | 3 | 0 | 7.127 | 0 | 112.359
-Rlog_1yr | SUMMARY | 0 | 0 | 488.431 | 218.93

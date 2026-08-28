@@ -1,4 +1,0 @@
-Algo | Batch | Fork_ms | Commit_ms | Merge_ms | Mem_MB
-Rlog_4yr | 0 | 0 | 5.375 | 0 | 162.484
-Rlog_4yr | 1 | 0 | 5.252 | 0 | 171.785
-Rlog_4yr | SUMMARY | 0 | 0 | 38.839 | 171.738
