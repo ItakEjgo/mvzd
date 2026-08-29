@@ -601,8 +601,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Override globals
-    algos.clear()
-    algos.extend(args.algos)
+    global algos
+    algos = args.algos
+    
     
     global steps, start_year, end_year, data_dir
     steps = [args.step]
