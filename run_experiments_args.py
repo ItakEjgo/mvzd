@@ -10,7 +10,7 @@ import time
 import subprocess
 from matplotlib.ticker import MaxNLocator
 
-os.environ['PARLAY_NUM_THREADS'] = '1'
+# Removed global PARLAY_NUM_THREADS = '1' to allow per-algorithm control
 
 logger = logging.getLogger("Benchmark")
 logger.setLevel(logging.INFO)
@@ -436,7 +436,7 @@ def run_benchmark():
     task_count = 0
     logger.info(f"Starting Real-World MVZD OSM Suite: {len(algos)} Algorithms.")
     
-    dataset_name = "bhutan"
+    dataset_name = os.path.basename(data_dir.strip('/')).replace('_workload', '')
     total_tasks = len(algos) * len(steps)
     task_count = 0
     
@@ -460,13 +460,24 @@ def run_benchmark():
             algo_dest = os.path.join(step_dest, algo)
             if not os.path.exists(algo_dest): os.makedirs(algo_dest)
             
-            expected_end_file = os.path.join(algo_dest, f"2026_EndQuery_{algo}.txt")
+            real_algo = algo.replace("_Par", "")
+            
+            expected_end_file = os.path.join(algo_dest, f"2026_EndQuery_{real_algo}.txt")
             if os.path.exists(expected_end_file):
                 logger.info(f"     [SKIP] {algo} at step {step} already completed.")
                 continue
             
-            cmd = f"./verify_bench -algo {algo} -q_step {step} -start_year {start_year} -end_year {end_year} -dir {data_dir}"
-            process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            env = os.environ.copy()
+            batch_size = 1
+            if "_Par" in algo:
+                batch_size = par_batch_size
+                if "PARLAY_NUM_THREADS" in env:
+                    del env["PARLAY_NUM_THREADS"]
+            else:
+                env["PARLAY_NUM_THREADS"] = "1"
+            
+            cmd = f"./verify_bench -algo {real_algo} -q_step {step} -start_year {start_year} -end_year {end_year} -dir {data_dir} -batch_size {batch_size}"
+            process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
             for line in iter(process.stdout.readline, ''):
                 line = line.strip()
                 if line and ("[" in line or "--- YEAR" in line or "Overlaps" in line):
@@ -482,7 +493,7 @@ def run_benchmark():
                 logger.info(f"     [OK] {algo} completed successfully in {elapsed_s:.1f}s")
             
             for f in os.listdir("verification_results"):
-                if f.endswith(".txt") and algo in f:
+                if f.endswith(".txt") and real_algo in f:
                     shutil.move(os.path.join("verification_results", f), os.path.join(algo_dest, f))
 
 def generate_hybrid_plots():
@@ -493,7 +504,7 @@ def generate_hybrid_plots():
     import os
     import re
     
-    dataset_name = "bhutan"
+    dataset_name = os.path.basename(data_dir.strip('/')).replace('_workload', '')
     base_dir = f"results_real_world/{dataset_name}"
     
     colors = sns.color_palette("tab10", len(algos))
@@ -597,19 +608,18 @@ if __name__ == "__main__":
     parser.add_argument('--step', type=int, default=100, help="Query step size")
     parser.add_argument('--start_year', type=int, default=2018)
     parser.add_argument('--end_year', type=int, default=2026)
+    parser.add_argument('--par_batch_size', type=int, default=1000, help="Batch size for Parallel algorithms")
     parser.add_argument('--dir', type=str, default="dataset/bhutan_workload", help="Path to workload directory")
     args = parser.parse_args()
 
     # Override globals
-    global algos
+    global algos, steps, start_year, end_year, data_dir, par_batch_size
     algos = args.algos
-    
-    
-    global steps, start_year, end_year, data_dir
     steps = [args.step]
     start_year = args.start_year
     end_year = args.end_year
     data_dir = args.dir
+    par_batch_size = args.par_batch_size
 
     run_benchmark()
     print("\n[All Done] Real-World Benchmark Completed! Generating Plots...")
