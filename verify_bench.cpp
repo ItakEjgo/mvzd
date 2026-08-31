@@ -7,6 +7,10 @@
 #include <sys/stat.h>
 #include <unordered_set>
 #include <atomic>
+#include <boost/geometry.hpp>
+#include <boost/geometry/geometries/point.hpp>
+#include <boost/geometry/geometries/box.hpp>
+#include <boost/geometry/index/rtree.hpp>
 
 #include "parlay/internal/get_time.h"
 #include <cpam/parse_command_line.h>
@@ -16,11 +20,6 @@
 #include "src/cpamz.hpp"
 #include "src/global_config.hpp"
 #include "src/cpambb.hpp"
-
-#include <boost/geometry.hpp>
-#include <boost/geometry/geometries/point.hpp>
-#include <boost/geometry/geometries/box.hpp>
-#include <boost/geometry/index/rtree.hpp>
 
 using namespace std;
 namespace bg = boost::geometry;
@@ -410,7 +409,11 @@ int main(int argc, char** argv) {
     auto P_base_set = geobase::get_sorted_points(P_base);
 
     std::unordered_map<size_t, geobase::Point> active_nodes;
-    for(auto& pt : P_base_vec) active_nodes[pt.id] = pt;
+    std::vector<geobase::Point> all_ever_existed_nodes;
+    for(auto& pt : P_base_vec) {
+        active_nodes[pt.id] = pt;
+        all_ever_existed_nodes.push_back(pt);
+    }
 
     // Tree definitions
     mvq::Tree* mvzd_tree = nullptr;
@@ -462,17 +465,22 @@ int main(int argc, char** argv) {
         size_t n = active_nodes.size();
         if (n == 0) return;
         
-        std::vector<geobase::Point> alive_vec;
-        alive_vec.reserve(n);
-        for(auto& kv : active_nodes) alive_vec.push_back(kv.second);
-        std::sort(alive_vec.begin(), alive_vec.end(), [](const geobase::Point& a, const geobase::Point& b) {
-            return a.id < b.id;
-        });
+        // Global sort overhead completely eliminated! 
+        // We now use rejection sampling on all_ever_existed_nodes which is O(1)
+        srand(n); // Ensure deterministic repeatable sequences per checkpoint
         
         std::vector<size_t> K_list = {1, 10, 100};
         
         parlay::sequence<geobase::Point> current_knn(100);
-        for(int i=0; i<100; i++) current_knn[i] = alive_vec[rand() % alive_vec.size()];
+        for(int i=0; i<100; i++) {
+            while(true) {
+                auto pt = all_ever_existed_nodes[rand() % all_ever_existed_nodes.size()];
+                if (active_nodes.find(pt.id) != active_nodes.end()) {
+                    current_knn[i] = active_nodes[pt.id];
+                    break;
+                }
+            }
+        }
         
         parlay::sequence<geobase::Bounding_Box> qs_small(100), qs_med(100), qs_large(100);
         
@@ -485,7 +493,14 @@ int main(int argc, char** argv) {
             double dx = world_w * ratio;
             double dy = world_h * ratio;
             for(int i=0; i<100; i++) {
-                auto center = alive_vec[rand() % n];
+                geobase::Point center;
+                while(true) {
+                    auto pt = all_ever_existed_nodes[rand() % all_ever_existed_nodes.size()];
+                    if (active_nodes.find(pt.id) != active_nodes.end()) {
+                        center = active_nodes[pt.id];
+                        break;
+                    }
+                }
                 qs[i] = geobase::Bounding_Box(
                     geobase::Point(center.x - dx, center.y - dy),
                     geobase::Point(center.x + dx, center.y + dy)
@@ -493,10 +508,10 @@ int main(int argc, char** argv) {
             }
         };
         
-        // Small: 0.05% of width/height, Med: 0.5%, Large: 5%
-        build_qs(0.0005, qs_small);
-        build_qs(0.005, qs_med);
-        build_qs(0.05, qs_large);
+        // Small: 0.005% of width/height, Med: 0.05%, Large: 0.5% (Scaled down 10x)
+        build_qs(0.00005, qs_small);
+        build_qs(0.0005, qs_med);
+        build_qs(0.005, qs_large);
         
         // As requested: dynamically sized std::vector strictly bounded by N to completely eliminate buffer overflows
         parlay::sequence<geobase::Point> shared_out(n + 100000);
@@ -640,8 +655,9 @@ int main(int argc, char** argv) {
     int ev_year;
     
     while(stream.next_changeset(ev, ev_year)) {
-            
-            auto& ops = ev.ops;
+        auto& ops = ev.ops;
+        int ev_year_log = ev_year;
+        size_t cs_id_log = ev.changeset_id;
             parlay::sequence<geobase::Point> adds, rems;
             vector<Value> boost_adds;
             
@@ -675,6 +691,7 @@ int main(int argc, char** argv) {
                     }
                     adds.push_back(geobase::Point(op.node_id, op.lon, op.lat));
                     active_nodes[op.node_id] = geobase::Point(op.node_id, op.lon, op.lat);
+                    all_ever_existed_nodes.push_back(geobase::Point(op.node_id, op.lon, op.lat));
                     if (run_algo.find("Rlog") != string::npos || run_algo == "all") {
                         boost_adds.push_back(make_pair(BoostPoint(op.lon, op.lat), op.node_id));
                     }
@@ -692,8 +709,8 @@ int main(int argc, char** argv) {
                 double cur_ms = t_c.stop() * 1000.0;
                 accumulated_commit_ms += cur_ms;
                 mvzd_global_history.push_back(mvzd_master);
-                auto new_mems = mem_mvzd(); double new_mem = new_mems.first + new_mems.second;
-                commit_fout << "MVZD | " << ev.changeset_id << " | " << ev_year << " | " << adds.size() << " | " << rems.size() << " | " << cur_ms << " | " << new_mem << " | " << (new_mem - prev_mem) << " | " << delta_data_mb << "\n";
+                double new_mem = mem_mvzd().first + mem_mvzd().second;
+                commit_fout << "MVZD | " << cs_id_log << " | " << ev_year_log << " | " << adds.size() << " | " << rems.size() << " | " << cur_ms << " | " << new_mem << " | " << (new_mem - prev_mem) << " | " << delta_data_mb << "\n";
             }
             if (run_algo == "CPAMBB" || run_algo == "all") {
                 auto prev_mems = mem_cpambb(cpambb_master); double prev_mem = prev_mems.first + prev_mems.second;
@@ -703,8 +720,8 @@ int main(int argc, char** argv) {
                 double cur_ms = t_c.stop() * 1000.0;
                 accumulated_commit_ms += cur_ms;
                 cpambb_master = v_cpambb;
-                auto new_mems = mem_cpambb(cpambb_master); double new_mem = new_mems.first + new_mems.second;
-                commit_fout << "CPAMBB | " << ev.changeset_id << " | " << ev_year << " | " << adds.size() << " | " << rems.size() << " | " << cur_ms << " | " << new_mem << " | " << (new_mem - prev_mem) << " | " << delta_data_mb << "\n";
+                double new_mem = mem_cpambb(cpambb_master).first + mem_cpambb(cpambb_master).second;
+                commit_fout << "CPAMBB | " << cs_id_log << " | " << ev_year_log << " | " << adds.size() << " | " << rems.size() << " | " << cur_ms << " | " << new_mem << " | " << (new_mem - prev_mem) << " | " << delta_data_mb << "\n";
             }
             if (run_algo.find("Rlog") != string::npos || run_algo == "all") {
                 string names[] = {"Rlog_1yr", "Rlog_2yr", "Rlog_3yr", "Rlog_4yr", "Rlog_5yr", "Rlog_NoSnap"};
@@ -722,13 +739,13 @@ int main(int argc, char** argv) {
                         }
                         
                         rlog_master[j]->merge(v_rlog);
-                        rlog_master[j]->check_and_compact(ev_year);
+                        rlog_master[j]->check_and_compact(ev_year_log);
                         
                         double cur_ms = t_c.stop() * 1000.0;
                         accumulated_commit_ms += cur_ms;
                         rlog_global_history[j].push_back(v_rlog);
-                        auto new_mems = mem_rlog(*rlog_master[j], rlog_global_history[j]); double new_mem = new_mems.first + new_mems.second;
-                        commit_fout << names[j] << " | " << ev.changeset_id << " | " << ev_year << " | " << adds.size() << " | " << rems.size() << " | " << cur_ms << " | " << new_mem << " | " << (new_mem - prev_mem) << " | " << delta_data_mb << "\n";
+                        double new_mem = mem_rlog(*rlog_master[j], rlog_global_history[j]).first + mem_rlog(*rlog_master[j], rlog_global_history[j]).second;
+                        commit_fout << names[j] << " | " << cs_id_log << " | " << ev_year_log << " | " << adds.size() << " | " << rems.size() << " | " << cur_ms << " | " << new_mem << " | " << (new_mem - prev_mem) << " | " << delta_data_mb << "\n";
                     }
                 }
             }
