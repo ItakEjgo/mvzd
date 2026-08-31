@@ -471,18 +471,18 @@ def run_benchmark():
             if "_Par" in algo:
                 if "PARLAY_NUM_THREADS" in env:
                     del env["PARLAY_NUM_THREADS"]
+                commits_dir = "01_commits"
                 if par_batch_size > 1:
-                    cur_data_dir = f"{data_dir}_par_{par_batch_size}"
-                    if not os.path.exists(cur_data_dir):
-                        logger.info(f"Generating parallel batch dataset: {cur_data_dir}")
-                        subprocess.run(f"python3 scripts/generate_parallel_csv.py --dataset_dir {data_dir} --out_dataset_dir {cur_data_dir} --batch_size {par_batch_size}", shell=True, check=True)
-                else:
-                    cur_data_dir = data_dir
+                    commits_dir = f"03_commits_par_{par_batch_size}"
+                    full_commits_path = os.path.join(data_dir, commits_dir)
+                    if not os.path.exists(full_commits_path):
+                        logger.info(f"Generating parallel batch dataset: {full_commits_path}")
+                        subprocess.run(f"python3 scripts/generate_parallel_csv.py --dataset_dir {data_dir} --batch_size {par_batch_size}", shell=True, check=True)
             else:
                 env["PARLAY_NUM_THREADS"] = "1"
-                cur_data_dir = data_dir
+                commits_dir = "01_commits"
             
-            cmd = f"./verify_bench -algo {real_algo} -q_step {step} -start_year {start_year} -end_year {end_year} -dir {cur_data_dir}"
+            cmd = f"./verify_bench -algo {real_algo} -q_step {step} -start_year {start_year} -end_year {end_year} -dir {data_dir} -commits_dir {commits_dir}"
             process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
             for line in iter(process.stdout.readline, ''):
                 line = line.strip()

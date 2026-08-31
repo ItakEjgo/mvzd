@@ -463,12 +463,28 @@ typedef pair<Point, FT> nn_pair;
     auto get_sorted_points(PT &P, bool use_hilbert = false)
     {
         auto n = P.size();
-        parlay::parallel_for(0, n, [&](int i)
-                             { P[i].morton_id = use_hilbert ? P[i].overlap_bits() : P[i].interleave_bits(); });
+        
+        if (n < 256) {
+            for(size_t i = 0; i < n; i++) {
+                P[i].morton_id = use_hilbert ? P[i].overlap_bits() : P[i].interleave_bits();
+            }
+        } else {
+            parlay::parallel_for(0, n, [&](int i)
+                                 { P[i].morton_id = use_hilbert ? P[i].overlap_bits() : P[i].interleave_bits(); });
+        }
 
-        return parlay::sort(P, [&](auto lhs, auto rhs)
-                            { return lhs.morton_id < rhs.morton_id ||
-                                     (lhs.morton_id == rhs.morton_id && lhs.id < rhs.id); });
+        auto morton_cmp = [&](auto lhs, auto rhs) {
+            return lhs.morton_id < rhs.morton_id ||
+                   (lhs.morton_id == rhs.morton_id && lhs.id < rhs.id); 
+        };
+
+        if (n < 256) {
+            PT P_copy = P;
+            std::sort(P_copy.begin(), P_copy.end(), morton_cmp);
+            return P_copy;
+        } else {
+            return parlay::sort(P, morton_cmp);
+        }
         // if (use_hilbert){
         // }
         // else{
@@ -485,17 +501,28 @@ typedef pair<Point, FT> nn_pair;
     auto get_sorted_points_hilbert(PT &P, bool use_hilbert = true)
     {
         auto n = P.size();
-        parlay::parallel_for(0, n, [&](int i)
-                             { P[i].morton_id = use_hilbert ? P[i].overlap_bits() : P[i].interleave_bits(); });
+        
+        if (n < 256) {
+            for(size_t i = 0; i < n; i++) {
+                P[i].morton_id = use_hilbert ? P[i].overlap_bits() : P[i].interleave_bits();
+            }
+        } else {
+            parlay::parallel_for(0, n, [&](int i)
+                                 { P[i].morton_id = use_hilbert ? P[i].overlap_bits() : P[i].interleave_bits(); });
+        }
 
-        return parlay::sort(P, [&](auto lhs, auto rhs)
-                            { return lhs.morton_id < rhs.morton_id; });
-        // auto P_set = parlay::sort(P, [&](auto lhs, auto rhs){
-        // 	unsigned long long p_lhs[] = {static_cast<unsigned long long>(lhs.x), static_cast<unsigned long long>(lhs.y)};
-        // 	unsigned long long p_rhs[] = {static_cast<unsigned long long>(rhs.x), static_cast<unsigned long long>(rhs.y)};
-        // 	return hilbert_cmp(2, sizeof(unsigned long long), 8 * sizeof(unsigned long long), p_lhs, p_rhs) == -1;
-        // });
-        // return P_set;
+        auto morton_cmp = [&](auto lhs, auto rhs) {
+            return lhs.morton_id < rhs.morton_id ||
+                   (lhs.morton_id == rhs.morton_id && lhs.id < rhs.id); 
+        };
+
+        if (n < 256) {
+            PT P_copy = P;
+            std::sort(P_copy.begin(), P_copy.end(), morton_cmp);
+            return P_copy;
+        } else {
+            return parlay::sort(P, morton_cmp);
+        }
     }
 
     //	return a set of sorted address, do not modify the input;

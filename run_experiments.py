@@ -24,7 +24,7 @@ fh = logging.FileHandler("benchmark_progress.log", mode='a')
 fh.setFormatter(formatter)
 logger.addHandler(fh)
 
-algos = ["MVZD", "CPAMBB", "Rlog_1yr", "Rlog_2yr", "Rlog_3yr", "Rlog_4yr", "Rlog_5yr", "Rlog_NoSnap"]
+algos = ["MVZD", "MVZD_Par", "CPAMBB", "CPAMBB_Par", "Rlog_1yr", "Rlog_2yr", "Rlog_3yr", "Rlog_4yr", "Rlog_5yr", "Rlog_NoSnap"]
 years = [2021, 2022, 2023, 2024, 2025]
 query_types = ["KNN_1", "KNN_10", "KNN_100", "Range_Small", "Range_Med", "Range_Large"]
 
@@ -463,13 +463,27 @@ def run_benchmark():
             algo_dest = os.path.join(step_dest, algo)
             if not os.path.exists(algo_dest): os.makedirs(algo_dest)
             
-            expected_end_file = os.path.join(algo_dest, f"2026_EndQuery_{algo}.txt")
+            real_algo = algo.replace("_Par", "")
+            
+            expected_end_file = os.path.join(algo_dest, f"2026_EndQuery_{real_algo}.txt")
             if os.path.exists(expected_end_file):
                 logger.info(f"     [SKIP] {algo} at step {step} already completed.")
                 continue
             
-            cmd = f"./verify_bench -real_world 1 -algo {algo} -q_step {step}"
-            process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            env = os.environ.copy()
+            if "_Par" in algo:
+                # Allow parlaylib to use all cores
+                if "PARLAY_NUM_THREADS" in env:
+                    del env["PARLAY_NUM_THREADS"]
+            elif real_algo in ["MVZD", "CPAMBB"]:
+                # Sequential mode for MVZD and CPAMBB
+                env["PARLAY_NUM_THREADS"] = "1"
+            else:
+                # Default to 1 for Rlog algorithms if they use parlaylib
+                env["PARLAY_NUM_THREADS"] = "1"
+            
+            cmd = f"./verify_bench -real_world 1 -algo {real_algo} -q_step {step}"
+            process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
             for line in iter(process.stdout.readline, ''):
                 line = line.strip()
                 if line and ("[" in line or "--- YEAR" in line or "Overlaps" in line):
@@ -485,7 +499,7 @@ def run_benchmark():
                 logger.info(f"     [OK] {algo} completed successfully in {elapsed_s:.1f}s")
             
             for f in os.listdir("verification_results"):
-                if f.endswith(".txt") and algo in f:
+                if f.endswith(".txt") and real_algo in f:
                     shutil.move(os.path.join("verification_results", f), os.path.join(algo_dest, f))
 
 def generate_hybrid_plots():

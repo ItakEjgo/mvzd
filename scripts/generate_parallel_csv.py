@@ -5,22 +5,13 @@ import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset_dir', required=True, help="Original workload dir (e.g. dataset/ca_workload)")
-parser.add_argument('--out_dataset_dir', required=True, help="New batched workload dir")
 parser.add_argument('--batch_size', type=int, default=1000)
 args = parser.parse_args()
 
-os.makedirs(args.out_dataset_dir, exist_ok=True)
-
-# Symlink 00_build
-build_src = os.path.join(args.dataset_dir, "00_build")
-build_dst = os.path.join(args.out_dataset_dir, "00_build")
-if not os.path.exists(build_dst):
-    os.symlink(os.path.abspath(build_src), build_dst)
-
-out_commits_dir = os.path.join(args.out_dataset_dir, "01_commits")
+in_commits_dir = os.path.join(args.dataset_dir, "01_commits")
+out_commits_dir = os.path.join(args.dataset_dir, f"03_commits_par_{args.batch_size}")
 os.makedirs(out_commits_dir, exist_ok=True)
 
-in_commits_dir = os.path.join(args.dataset_dir, "01_commits")
 files = sorted(glob.glob(f"{in_commits_dir}/commits_*.csv"))
 
 global_cs_map = {}

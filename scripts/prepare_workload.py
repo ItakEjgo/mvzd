@@ -1,11 +1,11 @@
 import os
 import glob
-import csv
+import pandas as pd
 from collections import defaultdict
-
 import argparse
+import time
 
-parser = argparse.ArgumentParser(description='Prepare OSM Workload.')
+parser = argparse.ArgumentParser(description='Prepare OSM Workload (Optimized for Large Memory).')
 parser.add_argument('--indir', required=True, help='Directory containing yearly CSVs from extraction')
 parser.add_argument('--outdir', required=True, help='Directory to store the final workload')
 parser.add_argument('--base_year', type=int, default=2017, help='Year to construct base snapshot')
@@ -16,96 +16,115 @@ OUTPUT_BASE = args.outdir
 BASE_YEAR = args.base_year
 os.makedirs(f"{OUTPUT_BASE}/00_build", exist_ok=True)
 os.makedirs(f"{OUTPUT_BASE}/01_commits", exist_ok=True)
-os.makedirs(f"{OUTPUT_BASE}/02_meta", exist_ok=True)
 
-print("Loading data...")
-all_rows = []
-for file in glob.glob(f"{INPUT_DIR}/*.csv"):
-    with open(file, 'r', encoding='utf-8') as f:
-        reader = csv.reader(f)
-        next(reader) 
-        for r in reader:
-            if len(r) >= 8:
-                all_rows.append((r[0], r[1], r[2]=='True', r[3], r[4], r[6], r[7]))
+print("1. Loading CSVs in parallel via Pandas...")
+start_t = time.time()
+files = glob.glob(f"{INPUT_DIR}/*.csv")
+dfs = []
+for file in files:
+    print(f"   Reading {file}...")
+    df = pd.read_csv(file, dtype={
+        'node_id': 'uint64',
+        'version': 'uint32',
+        'visible': 'bool',
+        'changeset': 'uint64',
+        'lon': 'float32',
+        'lat': 'float32',
+        'timestamp': 'string'
+    })
+    dfs.append(df)
 
-print("Sorting globally by timestamp...")
-all_rows.sort(key=lambda x: x[4])
+df = pd.concat(dfs, ignore_index=True)
+del dfs # Free memory
+print(f"   Loaded {len(df)} rows in {time.time() - start_t:.1f}s.")
 
-print("Computing changeset bounds...")
-changeset_meta = {}
-for r in all_rows:
-    cs = r[3]
-    ts = r[4]
-    if cs not in changeset_meta:
-        changeset_meta[cs] = [ts, ts]
-    else:
-        if ts < changeset_meta[cs][0]: changeset_meta[cs][0] = ts
-        if ts > changeset_meta[cs][1]: changeset_meta[cs][1] = ts
+print("2. Sorting globally by timestamp...")
+start_t = time.time()
+df.sort_values('timestamp', inplace=True)
+print(f"   Sorted in {time.time() - start_t:.1f}s.")
 
-print("Running state machine...")
+print("3. Computing changeset bounds...")
+start_t = time.time()
+cs_bounds = df.groupby('changeset')['timestamp'].agg(['min', 'max']).to_dict(orient='index')
+print(f"   Computed bounds for {len(cs_bounds)} changesets in {time.time() - start_t:.1f}s.")
+
+print("4. Running high-speed state machine...")
+start_t = time.time()
+
 active_nodes = {}
-yearly_stats = defaultdict(lambda: {'I': 0, 'U': 0, 'D': 0, 'Total_Valid': 0})
 yearly_commits = defaultdict(list)
-build_year = BASE_YEAR
 
-for i, r in enumerate(all_rows):
-    node_id, version, visible, cs, ts, lon, lat = r
-    year = int(ts[:4])
+# Pre-extract numpy arrays for blazing fast iteration
+nodes = df['node_id'].values
+versions = df['version'].values
+visibles = df['visible'].values
+css = df['changeset'].values
+lons = df['lon'].values
+lats = df['lat'].values
+timestamps = df['timestamp'].values
+
+# To determine year boundaries fast
+years = df['timestamp'].str.slice(0, 4).astype('uint16').values
+
+n_rows = len(df)
+for i in range(n_rows):
+    if i % 10000000 == 0 and i > 0:
+        print(f"   Processed {i} rows...")
+        
+    nid = nodes[i]
+    ver = versions[i]
+    vis = visibles[i]
+    cs = css[i]
+    ts = timestamps[i]
+    lon = lons[i]
+    lat = lats[i]
+    year = years[i]
 
     op = None
-    if node_id not in active_nodes:
-        if visible:
-            op = 'I'
-            # Filter negative coordinates right at the source!
-            if float(lon) >= 0 and float(lat) >= 0:
-                active_nodes[node_id] = (version, lon, lat, ts)
-            else:
-                op = None # Discard entirely
+    if nid not in active_nodes:
+        if vis:
+            if lon >= 0 and lat >= 0:
+                op = 'I'
+                active_nodes[nid] = (ver, lon, lat, ts)
     else:
-        if visible:
-            op = 'U'
-            if float(lon) >= 0 and float(lat) >= 0:
-                active_nodes[node_id] = (version, lon, lat, ts)
+        if vis:
+            if lon >= 0 and lat >= 0:
+                op = 'U'
+                active_nodes[nid] = (ver, lon, lat, ts)
             else:
                 op = 'D'
-                del active_nodes[node_id]
+                del active_nodes[nid]
         else:
             op = 'D'
-            del active_nodes[node_id]
+            del active_nodes[nid]
 
-    if op:
-        yearly_stats[year][op] += 1
-        if year > build_year:
-            yearly_commits[year].append((
-                cs,
-                changeset_meta[cs][0],
-                changeset_meta[cs][1],
-                op,
-                node_id,
-                version,
-                lon if op != 'D' else '',
-                lat if op != 'D' else '',
-                ts
-            ))
+    if op and year > BASE_YEAR:
+        bounds = cs_bounds[cs]
+        yearly_commits[year].append((
+            cs, bounds['min'], bounds['max'], op, nid, ver,
+            lon if op != 'D' else '',
+            lat if op != 'D' else '',
+            ts
+        ))
 
-    is_last_of_year = (i == len(all_rows)-1) or (int(all_rows[i+1][4][:4]) != year)
-    if is_last_of_year:
-        yearly_stats[year]['Total_Valid'] = len(active_nodes)
-        if year == build_year:
-            with open(f"{OUTPUT_BASE}/00_build/base_snapshot_{build_year}.csv", 'w', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow(['node_id', 'version', 'lon', 'lat', 'timestamp'])
-                for nid, val in active_nodes.items():
-                    writer.writerow([nid, val[0], val[1], val[2], val[3]])
+    # Check year boundary to save base snapshot
+    is_last_of_year = (i == n_rows - 1) or (years[i+1] != year)
+    if is_last_of_year and year == BASE_YEAR:
+        print(f"   Writing base snapshot for year {BASE_YEAR}...")
+        snap_df = pd.DataFrame.from_dict(active_nodes, orient='index', columns=list(['version', 'lon', 'lat', 'timestamp']))
+        snap_df.index.name = 'node_id'
+        snap_df.to_csv(f"{OUTPUT_BASE}/00_build/base_snapshot_{BASE_YEAR}.csv")
 
-print("Writing commits...")
-# Remove old commit files to prevent leftover 2007 commits
+print(f"   State machine completed in {time.time() - start_t:.1f}s.")
+
+print("5. Writing commits...")
+start_t = time.time()
 os.system(f"rm -f {OUTPUT_BASE}/01_commits/commits_*.csv")
 for year, commits in yearly_commits.items():
-    commits.sort(key=lambda x: (x[1], int(x[0]), x[8]))
-    with open(f"{OUTPUT_BASE}/01_commits/commits_{year}.csv", 'w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(['changeset', 'cs_start', 'cs_end', 'op_type', 'node_id', 'version', 'lon', 'lat', 'timestamp'])
-        writer.writerows(commits)
+    print(f"   Writing year {year} ({len(commits)} ops)...")
+    cdf = pd.DataFrame(commits, columns=list(['changeset', 'cs_start', 'cs_end', 'op_type', 'node_id', 'version', 'lon', 'lat', 'timestamp']))
+    cdf.sort_values(['cs_start', 'changeset', 'timestamp'], inplace=True)
+    cdf.to_csv(f"{OUTPUT_BASE}/01_commits/commits_{year}.csv", index=False)
 
-print("Data rebuilt successfully with 2007 base!")
+print(f"   All commits written in {time.time() - start_t:.1f}s.")
+print("Data rebuilt successfully (Optimized for High Memory Server)!")

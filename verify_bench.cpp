@@ -266,16 +266,17 @@ class CommitStream {
     std::vector<Operation> buffer_ops;
 
     std::string ds_dir;
+    std::string commits_dir;
     int end_year;
 
 public:
-    CommitStream(int start_year, std::string dir, int ey) : current_year(start_year), has_next(true), last_cs_id(0), ds_dir(dir), end_year(ey) {
+    CommitStream(int start_year, std::string dir, std::string cd, int ey) : current_year(start_year), has_next(true), last_cs_id(0), ds_dir(dir), commits_dir(cd), end_year(ey) {
         open_year(current_year);
     }
     
     void open_year(int year) {
         if (fin.is_open()) fin.close();
-        fin.open(ds_dir + "/01_commits/commits_" + to_string(year) + ".csv");
+        fin.open(ds_dir + "/" + commits_dir + "/commits_" + to_string(year) + ".csv");
         if (fin.is_open()) {
             getline(fin, line); // skip header
         } else {
@@ -346,6 +347,7 @@ int main(int argc, char** argv) {
     int start_year = cmd.getOptionIntValue("-start_year", 2018);
     int end_year = cmd.getOptionIntValue("-end_year", 2026);
     size_t q_step = cmd.getOptionIntValue("-q_step", 1000);
+    string commits_dir = cmd.getOptionValue("-commits_dir", "01_commits");
 
     std::cout << "[Init] Pre-scanning for Dynamic MBR..." << std::endl;
     double min_x = 1e18, min_y = 1e18, max_x = -1e18, max_y = -1e18;
@@ -372,7 +374,7 @@ int main(int argc, char** argv) {
 
     // Scan Commits
     for (int year = start_year; year <= end_year; year++) {
-        ifstream fin(dataset_dir + "/01_commits/commits_" + to_string(year) + ".csv");
+        ifstream fin(dataset_dir + "/" + commits_dir + "/commits_" + to_string(year) + ".csv");
         if (!fin.is_open()) continue;
         getline(fin, line);
         while(getline(fin, line)) {
@@ -649,8 +651,7 @@ int main(int argc, char** argv) {
     std::cout << "[Event-Driven] Executing Workload with step size: " << q_step << std::endl;
     ofstream commit_fout("verification_results/CommitLog_" + run_algo + ".txt");
     commit_fout << "Algo | CS_ID | Year | Adds | Rems | Time_ms | Total_Index_MB | Delta_Index_MB | Delta_Data_MB\n";
-    CommitStream stream(start_year, dataset_dir, end_year);
-    
+    CommitStream stream(start_year, dataset_dir, commits_dir, end_year);
     Event ev;
     int ev_year;
     

@@ -1,9 +1,26 @@
+# Build directories
 build/
+.cache/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Data and results
 dataset/
-compile_commands.json
-.cache/
+verification_results/
+results_real_world/
+*.csv
+*.tsv
 *.log
-*.qry
-build/
-build-cmake/
-.cache/
+*.txt
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+
+# Compiled binaries
+verify_bench
+main
+debug_*
