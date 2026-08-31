@@ -436,7 +436,8 @@ def run_benchmark():
     task_count = 0
     logger.info(f"Starting Real-World MVZD OSM Suite: {len(algos)} Algorithms.")
     
-    dataset_name = os.path.basename(data_dir.strip('/')).replace('_workload', '')
+    dataset_name = data_dir.strip('/').split('/')[-1].replace('_workload', '')
+    if dataset_name == "workload": dataset_name = data_dir.strip('/').split('/')[-2].replace('dataset_', '')
     total_tasks = len(algos) * len(steps)
     task_count = 0
     
